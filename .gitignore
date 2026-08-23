@@ -1,0 +1,36 @@
+# Environment and editor state
+.env
+.venv/
+.idea/
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.cache/
+coverage.xml
+htmlcov/
+
+# JavaScript
+node_modules/
+.next/
+out/
+
+# Local data, databases, model artifacts, and service volumes
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+artifacts/*
+!artifacts/.gitkeep
+volumes/
+mlruns/
+phoenix/
+
+# Secrets and downloaded archives
+*.zip
+kaggle.json
+work/

@@ -1,0 +1,32 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Rhea FinGraph: start services",
+      "type": "shell",
+      "command": "make services-up",
+      "problemMatcher": []
+    },
+    {
+      "label": "Rhea FinGraph: run API",
+      "type": "shell",
+      "command": "make api",
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "custom",
+        "pattern": {"regexp": ".*"},
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "Started reloader process",
+          "endsPattern": "Application startup complete"
+        }
+      }
+    },
+    {
+      "label": "Rhea FinGraph: test",
+      "type": "shell",
+      "command": "make test",
+      "problemMatcher": []
+    }
+  ]
+}
