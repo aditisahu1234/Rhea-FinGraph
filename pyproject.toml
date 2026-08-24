@@ -13,6 +13,7 @@ dependencies = [
   "pydantic>=2.10,<3",
   "structlog>=24.4,<26",
   "uvicorn[standard]>=0.34,<1",
+  "xgboost>=2.1,<4",
 ]
 
 [project.optional-dependencies]

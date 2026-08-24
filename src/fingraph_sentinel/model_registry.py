@@ -46,8 +46,6 @@ class ModelRegistry:
     def _ensure_loaded(self) -> None:
         if self._loaded:
             return
-        import joblib  # local import: heavy dependency only needed once a model exists
-
         self.config = json.loads((self.model_dir / "model_config.json").read_text())
         self.priors_merchant_rate = _normalize_keys(
             json.loads((self.model_dir / "merchant_fraud_priors.json").read_text())
@@ -58,8 +56,34 @@ class ModelRegistry:
         self.priors_mcc_share = _normalize_keys(
             json.loads((self.model_dir / "mcc_share.json").read_text())
         )
-        self._model = joblib.load(self.model_dir / "model.joblib")
+        backend = str(self.config.get("backend", "sklearn"))
+        filename = self.config.get("model_file", "model.joblib")
+        path = self.model_dir / filename
+        if backend in ("xgboost", "lightgbm") or path.suffix == ".json":
+            import xgboost as xgb
+
+            booster = xgb.Booster()
+            booster.load_model(path)
+            self._model = ("xgboost", booster)
+        elif backend == "lightgbm" or path.suffix == ".txt":
+            import lightgbm as lgb
+
+            self._model = ("lightgbm", lgb.Booster(model_file=str(path)))
+        else:
+            import joblib  # heavy dependency only needed once a model exists
+
+            self._model = ("sklearn", joblib.load(path))
         self._loaded = True
+
+    def _raw_probability(self, x: np.ndarray) -> float:
+        kind, model = self._model
+        if kind == "xgboost":
+            import xgboost as xgb
+
+            return float(model.predict(xgb.DMatrix(x))[0])
+        if kind == "lightgbm":
+            return float(model.predict(x)[0])
+        return float(model.predict_proba(x)[0, 1])
 
     # ------------------------------------------------------------------ scoring
 
@@ -176,7 +200,7 @@ class ModelRegistry:
     def score_event(self, event: PaymentEvent) -> ScoreOutcome:
         self._ensure_loaded()
         x = self._feature_vector(event)
-        raw = float(self._model.predict_proba(x)[0, 1])
+        raw = self._raw_probability(x)
         scale = float(self.config.get("calibration_scale_pos_weight", 1.0))
         calibrated = raw / (scale * (1.0 - raw) + raw)
         calibrated = min(max(calibrated, 0.0), 1.0)

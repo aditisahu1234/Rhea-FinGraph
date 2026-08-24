@@ -9,7 +9,8 @@ help:
 	@printf "  make test           Run backend tests\n"
 	@printf "  make lint           Run Ruff\n"
 	@printf "  make data-download  Download the IBM fraud dataset through the Kaggle CLI\n"
-	@printf "  make train-baseline        Train the baseline risk model on all splits\n"
+	@printf "  make train-baseline        Train the XGBoost risk model on all splits (CPU)\n"
+	@printf "  make train-baseline-online Train the cold-start-safe serving model\n"
 	@printf "  make train-baseline-smoke  Quick capped-row pipeline sanity check\n"
 
 setup:
@@ -36,8 +37,18 @@ data-download:
 	kaggle datasets download -d ealtman2019/credit-card-transactions -p data/raw
 
 train-baseline:
-	.venv/bin/python -m fingraph_sentinel.train_baseline --out artifacts/models/baseline
+	.venv/bin/python -m fingraph_sentinel.train_baseline --backend xgboost \
+		--feature-set full --out artifacts/models/baseline-full
+
+train-baseline-online:
+	.venv/bin/python -m fingraph_sentinel.train_baseline --backend xgboost \
+		--feature-set online --out artifacts/models/baseline
+
+train-baseline-sklearn:
+	.venv/bin/python -m fingraph_sentinel.train_baseline --backend sklearn \
+		--feature-set online --out artifacts/models/baseline-sklearn
 
 train-baseline-smoke:
-	.venv/bin/python -m fingraph_sentinel.train_baseline --out artifacts/models/smoke \
+	.venv/bin/python -m fingraph_sentinel.train_baseline --backend xgboost \
+		--out artifacts/models/smoke-xgb \
 		--max-train-rows 400000 --max-val-rows 150000 --max-test-rows 150000
