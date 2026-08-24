@@ -31,6 +31,7 @@ ml = [
   "torch-geometric>=2.6,<3",
   "xgboost>=2.1,<4",
 ]
+baseline = ["scikit-learn>=1.6,<2"]
 resilience = ["helix-agent-sdk>=0.2,<1"]
 observability = [
   "arize-phoenix>=7,<9",

@@ -45,3 +45,24 @@ Create the held-out benchmark only after profiling the schema:
 ## Safety boundary
 
 This project is defensive only. It never executes a payment, refund, capture, block, or other money movement. A model may recommend `hold`; a merchant must make the final decision.
+
+## Baseline model (Phase 2)
+
+`src/fingraph_sentinel/features.py` builds strictly causal features: expanding per-customer/card/merchant statistics are shifted by one event so no transaction ever sees its own future, and label-derived priors (merchant fraud rate, category frequencies) are fitted on the training period only.
+
+Two model variants are supported by the same trainer (`make train-baseline`):
+
+| Variant | Feature set | Purpose |
+| --- | --- | --- |
+| `full` | calendar + causal velocity + priors | Offline benchmarking of what history-aware models can achieve |
+| `online` | calendar + merchant priors only | Serves `/score`; every feature is computable for a single cold-start event |
+
+Serving only online-computable features keeps validation thresholds valid on live traffic. The API loads whatever sits in `artifacts/models/baseline/` lazily on first request -- dropping a trained model there upgrades the running service without a restart.
+
+Decision bands (`allow` / `review` / `hold`) are chosen on validation precision targets with fixed top-risk-rate fallbacks, then applied unchanged to the locked test period. Metrics land in `artifacts/models/<variant>/model_config.json`.
+
+```bash
+make train-baseline-smoke   # ~20 s pipeline sanity check
+make train-baseline         # full chronological train/validation/test run
+```
+

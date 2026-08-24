@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -7,6 +8,7 @@ class Settings(BaseSettings):
     project_name: str = "Rhea FinGraph"
     environment: str = "local"
     model_version: str = "untrained"
+    model_dir: Path = Path("artifacts/models/baseline")
 
     postgres_url: str = "postgresql://fingraph:change-me-local-only@localhost:5432/fingraph"
     redis_url: str = "redis://localhost:6379/0"
