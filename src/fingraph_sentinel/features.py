@@ -68,7 +68,7 @@ def _static_and_calendar(lf: pl.LazyFrame) -> pl.LazyFrame:
     hour = pl.col("event_time").dt.hour()
     channel = pl.col("payment_channel").str.to_lowercase()
     return lf.with_columns(
-        pl.col("amount").log1p().alias("amount_log1p"),
+        pl.col("amount").clip(lower_bound=0.0).log1p().alias("amount_log1p"),
         (hour * math.pi / 12).sin().alias("hour_sin"),
         (hour * math.pi / 12).cos().alias("hour_cos"),
         (pl.col("event_time").dt.weekday() >= 6).cast(pl.Int8).alias("is_weekend"),

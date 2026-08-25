@@ -101,7 +101,7 @@ class ModelRegistry:
         channel = (event.payment_channel or "").lower()
 
         values: dict[str, float | None] = {
-            "amount_log1p": math.log1p(float(event.amount)),
+            "amount_log1p": math.log1p(max(float(event.amount), 0.0)),
             "hour_sin": math.sin(hour * math.pi / 12),
             "hour_cos": math.cos(hour * math.pi / 12),
             "is_weekend": 1.0 if event.event_time.weekday() >= 5 else 0.0,

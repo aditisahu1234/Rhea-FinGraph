@@ -91,6 +91,7 @@ def _attach_priors(
 def _matrix(frame: pl.DataFrame, columns: list[str]) -> tuple[np.ndarray, np.ndarray]:
     frame = frame.with_columns([pl.col(name).cast(pl.Float32) for name in columns])
     x = frame.select(columns).to_numpy().astype(np.float32)
+    np.nan_to_num(x, copy=False, nan=np.nan, posinf=np.nan, neginf=np.nan)
     y = frame["is_fraud"].to_numpy().astype(np.int8)
     return x, y
 
