@@ -13,6 +13,9 @@ help:
 	@printf "  make train-baseline-online Train the cold-start-safe serving model\n"
 	@printf "  make train-baseline-smoke  Quick capped-row pipeline sanity check\n"
 	@printf "  make ingest-graph      Ingest all splits into Neo4j fraud graph\n"
+	@printf "  make graph-snapshots   Build temporal HeteroData snapshots (yearly buckets)\n"
+	@printf "  make train-gnn         Train TeMP-TraG-style temporal heterogeneous GNN\n"
+	@printf "  make train-gnn-smoke   Capped-row GNN smoke test on CPU\n"
 
 setup:
 	python3 -m venv .venv
@@ -53,6 +56,19 @@ train-baseline-smoke:
 	.venv/bin/python -m fingraph_sentinel.train_baseline --backend xgboost \
 		--out artifacts/models/smoke-xgb \
 		--max-train-rows 400000 --max-val-rows 150000 --max-test-rows 150000
+
+graph-snapshots:
+	.venv/bin/python -m fingraph_sentinel.graph_snapshots
+
+train-gnn:
+	.venv/bin/python -m fingraph_sentinel.train_gnn
+
+train-gnn-smoke:
+	rm -rf artifacts/graph/snapshots-smoke artifacts/graph/gnn-smoke
+	.venv/bin/python -m fingraph_sentinel.graph_snapshots --max-rows 150000 \
+		--bucket-months 12 --out artifacts/graph/snapshots-smoke
+	.venv/bin/python -m fingraph_sentinel.train_gnn --data-dir artifacts/graph/snapshots-smoke \
+		--out artifacts/graph/gnn-smoke --smoke --smoke-offset 20
 
 ingest-graph:
 	.venv/bin/python -m fingraph_sentinel.graph_ingest
