@@ -12,6 +12,7 @@ help:
 	@printf "  make train-baseline        Train the XGBoost risk model on all splits (CPU)\n"
 	@printf "  make train-baseline-online Train the cold-start-safe serving model\n"
 	@printf "  make train-baseline-smoke  Quick capped-row pipeline sanity check\n"
+	@printf "  make ingest-graph      Ingest all splits into Neo4j fraud graph\n"
 
 setup:
 	python3 -m venv .venv
@@ -52,3 +53,6 @@ train-baseline-smoke:
 	.venv/bin/python -m fingraph_sentinel.train_baseline --backend xgboost \
 		--out artifacts/models/smoke-xgb \
 		--max-train-rows 400000 --max-val-rows 150000 --max-test-rows 150000
+
+ingest-graph:
+	.venv/bin/python -m fingraph_sentinel.graph_ingest
