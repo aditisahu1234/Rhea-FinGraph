@@ -117,6 +117,7 @@ def train_temporal(
     device: torch.device,
     out_dir: Path,
     smoke: bool,
+    init_from: Path | None = None,
 ) -> dict:
     in_dims = {nt: NODE_FEATURE_DIM for nt in ["customer", "merchant", "card"]}
     model = TemporalHeteroGNN(
@@ -127,6 +128,14 @@ def train_temporal(
         edge_dim=len(EDGE_FEATURES),
         t_max=max(64, len(snapshots) + 1),
     ).to(device)
+
+    if init_from is not None:
+        sd = torch.load(init_from, weights_only=True)
+        missing, unexpected = model.load_state_dict(sd, strict=False)
+        print(
+            f"[train] initialized from {init_from} "
+            f"(missing = scorer keys: {len(missing)}; unexpected: {len(unexpected)})"
+        )
 
     # positive weight from TRAIN edges only
     pos = 0
@@ -328,6 +337,8 @@ def main():
                         help="Snapshot index to start the smoke window at")
     parser.add_argument("--with-sage", action="store_true",
                         help="Also train static GraphSAGE comparison baseline")
+    parser.add_argument("--init-from", type=Path, default=None,
+                        help="Embedding-side checkpoint from pretrain_gnn to start from")
     args = parser.parse_args()
 
     device = torch.device(
@@ -357,6 +368,7 @@ def main():
         snapshots, train_m, val_m, test_m,
         hidden=hidden, layers=layers, heads=args.heads,
         epochs=epochs, device=device, out_dir=args.out, smoke=args.smoke,
+        init_from=args.init_from,
     )
     print("\n=== TEMPORAL GNN (TeMP-TraG-style) ===")
     print(f"  validation: {result['metrics_validation']}")
@@ -377,6 +389,7 @@ def main():
         "heads": args.heads,
         "epochs": epochs,
         "smoke": args.smoke,
+        "init_from": str(args.init_from) if args.init_from else None,
         "n_snapshots": n,
         "trained_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "fit_seconds": round(time.time() - t0, 1),

@@ -16,6 +16,8 @@ help:
 	@printf "  make graph-snapshots   Build temporal HeteroData snapshots (yearly buckets)\n"
 	@printf "  make train-gnn         Train TeMP-TraG-style temporal heterogeneous GNN\n"
 	@printf "  make train-gnn-smoke   Capped-row GNN smoke test on CPU\n"
+	@printf "  make pretrain-gnn      Self-supervised GNN pre-training (masked features)\n"
+	@printf "  make pretrain-gnn-smoke Capped-row pre-training smoke test on CPU\n"
 
 setup:
 	python3 -m venv .venv
@@ -69,6 +71,14 @@ train-gnn-smoke:
 		--bucket-months 12 --out artifacts/graph/snapshots-smoke
 	.venv/bin/python -m fingraph_sentinel.train_gnn --data-dir artifacts/graph/snapshots-smoke \
 		--out artifacts/graph/gnn-smoke --smoke --smoke-offset 20
+
+pretrain-gnn:
+	.venv/bin/python -m fingraph_sentinel.pretrain_gnn
+
+pretrain-gnn-smoke:
+	rm -rf artifacts/graph/gnn-pretrain-smoke
+	.venv/bin/python -m fingraph_sentinel.pretrain_gnn --data-dir artifacts/graph/snapshots-smoke \
+		--out artifacts/graph/gnn-pretrain-smoke --smoke --smoke-offset 20
 
 ingest-graph:
 	.venv/bin/python -m fingraph_sentinel.graph_ingest
