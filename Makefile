@@ -15,6 +15,7 @@ help:
 	@printf "  make ingest-graph      Ingest all splits into Neo4j fraud graph\n"
 	@printf "  make graph-snapshots   Build temporal HeteroData snapshots (yearly buckets)\n"
 	@printf "  make train-gnn         Train TeMP-TraG-style temporal heterogeneous GNN\n"
+	@printf "  make train-gnn-event   Strong event-aligned GNN (fair vs baseline, fusible)\n"
 	@printf "  make train-gnn-smoke   Capped-row GNN smoke test on CPU\n"
 	@printf "  make pretrain-gnn      Self-supervised GNN pre-training (masked features)\n"
 	@printf "  make pretrain-gnn-smoke Capped-row pre-training smoke test on CPU\n"
@@ -77,6 +78,11 @@ graph-snapshots:
 
 train-gnn:
 	.venv/bin/python -m fingraph_sentinel.train_gnn
+
+train-gnn-event:
+	.venv/bin/python -m fingraph_sentinel.train_gnn \
+		--hidden 192 --layers 3 --heads 8 --dropout 0.2 --lr 1e-3 \
+		--epochs 40 --patience 8 --event-cutoffs 534 568 --with-sage
 
 train-gnn-smoke:
 	rm -rf artifacts/graph/snapshots-smoke artifacts/graph/gnn-smoke

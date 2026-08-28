@@ -56,6 +56,30 @@ def split_months(n_months: int) -> tuple[list[int], list[int], list[int]]:
     return list(range(0, s1)), list(range(s1, s2)), list(range(s2, n_months))
 
 
+def event_split_months(
+    snapshots, cutoffs: tuple[int, int]
+) -> tuple[list[int], list[int], list[int]]:
+    """Partition snapshot months by calendar month-idx cutoffs (baseline-aligned).
+
+    Snapshot ``m`` goes to train if all its edges are before ``cutoffs[0]``,
+    to val if within [cut0, cut1), to test if >= cut1. Because a yearly bucket
+    can straddle a cutoff, we assign by the bucket's dominant calendar month
+    (its median). Keeps node-feature leakage-safe (features are strictly-past).
+    """
+    c0, c1 = cutoffs
+    tr, va, te = [], [], []
+    for m in range(len(snapshots)):
+        em = snapshots[m]["customer", "purchased", "merchant"].month_idx
+        mid = int(em.median())
+        if mid < c0:
+            tr.append(m)
+        elif mid < c1:
+            va.append(m)
+        else:
+            te.append(m)
+    return tr, va, te
+
+
 def purchased_edges(snapshot, device: torch.device):
     rel = snapshot["customer", "purchased", "merchant"]
     return (
@@ -72,6 +96,9 @@ def evaluate_temporal(
     device: torch.device,
 ) -> dict:
     """Score all edges in `months` (causal, eval mode) and return metrics."""
+    if not months:
+        return {"rows": 0, "frauds": 0, "average_precision": float("nan"),
+                "roc_auc": float("nan"), "mean_prob": float("nan")}
     model.eval()
     logits_all, y_all = [], []
     with torch.no_grad():
@@ -166,6 +193,9 @@ def train_temporal(
     out_dir: Path,
     smoke: bool,
     init_from: Path | None = None,
+    dropout: float = 0.2,
+    lr: float = 1e-3,
+    patience: int = 5,
 ) -> dict:
     in_dims = {nt: NODE_FEATURE_DIM for nt in ["customer", "merchant", "card"]}
     model = TemporalHeteroGNN(
@@ -173,6 +203,7 @@ def train_temporal(
         hidden=hidden,
         num_layers=layers,
         num_heads=heads,
+        dropout=dropout,
         edge_dim=len(EDGE_FEATURES),
         t_max=max(64, len(snapshots) + 1),
     ).to(device)
@@ -195,12 +226,13 @@ def train_temporal(
     pos_weight = torch.tensor([(tot - pos) / max(pos, 1)], device=device)
     print(f"[train] train edges={tot:,}, frauds={pos:,}, pos_weight={pos_weight[0]:.1f}")
 
-    opt = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-5)
+    opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-5)
     total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"[train] params={total_params:,} device={device}")
+    print(f"[train] params={total_params:,} device={device} dropout={dropout} lr={lr}")
 
     best_val_auc = 0.0
     best_state = None
+    no_improve = 0
     for epoch in range(1, epochs + 1):
         model.train()
         epoch_loss = 0.0
@@ -232,6 +264,13 @@ def train_temporal(
         if val["roc_auc"] > best_val_auc:
             best_val_auc = val["roc_auc"]
             best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
+            no_improve = 0
+        else:
+            no_improve += 1
+            if patience and no_improve >= patience:
+                print(f"  [train] early stop at epoch {epoch} (no val-AUC gain "
+                      f"for {patience} epochs)")
+                break
         if smoke and epoch >= 2:
             break
 
@@ -383,6 +422,19 @@ def main():
     parser.add_argument("--hidden", type=int, default=64)
     parser.add_argument("--layers", type=int, default=2)
     parser.add_argument("--heads", type=int, default=4)
+    parser.add_argument("--dropout", type=float, default=0.2,
+                        help="Dropout between graph layers (stronger arch)")
+    parser.add_argument("--lr", type=float, default=1e-3,
+                        help="AdamW learning rate")
+    parser.add_argument("--patience", type=int, default=5,
+                        help="Early-stop epochs of no val-AUC improvement")
+    parser.add_argument("--event-cutoffs", type=int, nargs=2, default=None,
+                        metavar=("C0", "C1"),
+                        help="Baseline-aligned calendar month-idx cutoffs for "
+                             "train|val|test (e.g. 534 568). Overrides the "
+                             "default bucket-count 60/20/20 split and makes "
+                             "the score stream honestly fusible with the "
+                             "XGBoost baseline.")
     parser.add_argument("--device", default="auto", help="cpu|cuda|auto")
     parser.add_argument("--smoke", action="store_true",
                         help="Truncate to small window, tiny model, 2 epochs")
@@ -403,8 +455,17 @@ def main():
     snapshots = load_snapshots(args.data_dir, max_months=max_months,
                                offset=args.smoke_offset)
     n = len(snapshots)
-    train_m, val_m, test_m = split_months(n)
-    print(f"[train] snapshots={n} train={train_m} val={val_m} test={test_m}")
+
+    if args.event_cutoffs is not None:
+        train_m, val_m, test_m = event_split_months(
+            snapshots, tuple(args.event_cutoffs)
+        )
+        print(f"[train] event-aligned split {args.event_cutoffs} "
+              f"train={train_m} val={val_m} test={test_m}")
+    else:
+        train_m, val_m, test_m = split_months(n)
+        print(f"[train] bucket split 60/20/20 "
+              f"train={train_m} val={val_m} test={test_m}")
 
     if not val_m:
         print("Not enough snapshots for a chronological split; add more data.")
@@ -422,6 +483,7 @@ def main():
         hidden=hidden, layers=layers, heads=args.heads,
         epochs=epochs, device=device, out_dir=args.out, smoke=args.smoke,
         init_from=args.init_from,
+        dropout=args.dropout, lr=args.lr, patience=args.patience,
     )
     print("\n=== TEMPORAL GNN (TeMP-TraG-style) ===")
     print(f"  validation: {result['metrics_validation']}")
@@ -440,9 +502,14 @@ def main():
         "hidden": hidden,
         "layers": layers,
         "heads": args.heads,
+        "dropout": args.dropout,
+        "lr": args.lr,
+        "patience": args.patience,
         "epochs": epochs,
         "smoke": args.smoke,
         "init_from": str(args.init_from) if args.init_from else None,
+        "split_mode": "event" if args.event_cutoffs else "bucket-60/20/20",
+        "event_cutoffs": list(args.event_cutoffs) if args.event_cutoffs else None,
         "n_snapshots": n,
         "trained_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "fit_seconds": round(time.time() - t0, 1),

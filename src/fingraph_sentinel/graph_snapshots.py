@@ -35,7 +35,16 @@ EDGE_FEATURES = [
     "channel_swipe", "channel_chip", "channel_online", "month_frac",
 ]
 
-NODE_FEATURE_DIM = 4  # log1p(n), log1p(amount), log1p(extra), fraud_rate
+NODE_FEATURE_DIM = 8
+# derived per entity from strictly-past history:
+#   0 log1p(n)             txn count
+#   1 log1p(amount)        total spend
+#   2 log1p(extra)         distinct counterparties
+#   3 fraud rate           frauds / txns
+#   4 log1p(total frauds)  absolute fraud volume
+#   5 log1p(avg amount)    spend intensity
+#   6 partner density      distinct counterparties per txn
+#   7 log1p(velocity)      spend per active month
 
 
 def _month_idx(ts: pl.Series) -> pl.Series:
@@ -46,8 +55,10 @@ def _month_idx(ts: pl.Series) -> pl.Series:
 def _cumulative_history(df: pl.DataFrame, id_col: str, extra_count_col: str) -> pl.DataFrame:
     """Per (entity, month) strictly-past cumulative stats.
 
-    Output columns: [id_col, month_idx, hist_n, hist_amt, hist_extra, hist_fraud]
-    hist_* EXCLUDE the current month (strictly past history only).
+    Output columns: [id_col, month_idx, hist_n, hist_amt, hist_extra, hist_fraud,
+    hist_months]
+    hist_* EXCLUDE the current month (strictly past history only); hist_months is
+    the number of distinct past months the entity was active (nonzero for velocity).
     """
     return (
         df.group_by([id_col, "month_idx"])
@@ -63,6 +74,7 @@ def _cumulative_history(df: pl.DataFrame, id_col: str, extra_count_col: str) -> 
             pl.col("amt").cum_sum().over(id_col).alias("amt_cum"),
             pl.col("extra").cum_sum().over(id_col).alias("extra_cum"),
             pl.col("fraud").cum_sum().over(id_col).alias("fraud_cum"),
+            pl.lit(1).cum_sum().over(id_col).alias("months_cum"),
         )
         .select(
             id_col,
@@ -71,6 +83,7 @@ def _cumulative_history(df: pl.DataFrame, id_col: str, extra_count_col: str) -> 
             (pl.col("amt_cum") - pl.col("amt")).alias("hist_amt"),
             (pl.col("extra_cum") - pl.col("extra")).alias("hist_extra"),
             (pl.col("fraud_cum") - pl.col("fraud")).alias("hist_fraud"),
+            (pl.col("months_cum") - 1).alias("hist_months"),
         )
     )
 
@@ -102,6 +115,7 @@ def _feat_matrix_for_month(
             pl.lit(None, dtype=pl.Float64).alias("hist_amt"),
             pl.lit(None, dtype=pl.Float64).alias("hist_extra"),
             pl.lit(None, dtype=pl.Float64).alias("hist_fraud"),
+            pl.lit(None, dtype=pl.Float64).alias("hist_months"),
         )
 
     frame = frame.with_columns(
@@ -109,6 +123,7 @@ def _feat_matrix_for_month(
         pl.col("hist_amt").fill_null(0.0).clip(lower_bound=0.0).alias("amt"),
         pl.col("hist_extra").fill_null(0.0).alias("extra"),
         pl.col("hist_fraud").fill_null(0.0).alias("fraud"),
+        pl.col("hist_months").fill_null(0.0).alias("months"),
     ).with_columns(
         # 0/0 yields NaN; guard explicitly (fill_null does NOT catch NaN)
         pl.when(pl.col("n") > 0)
@@ -117,6 +132,24 @@ def _feat_matrix_for_month(
         .fill_nan(0.0)
         .clip(lower_bound=0.0, upper_bound=1.0)
         .alias("rate"),
+        pl.when(pl.col("n") > 0)
+        .then(pl.col("amt") / pl.col("n"))
+        .otherwise(0.0)
+        .fill_nan(0.0)
+        .clip(lower_bound=0.0)
+        .alias("avg_amt"),
+        pl.when(pl.col("n") > 0)
+        .then(pl.col("extra") / pl.col("n"))
+        .otherwise(0.0)
+        .fill_nan(0.0)
+        .clip(lower_bound=0.0, upper_bound=1.0)
+        .alias("partner_density"),
+        pl.when(pl.col("months") > 0)
+        .then(pl.col("amt") / pl.col("months"))
+        .otherwise(0.0)
+        .fill_nan(0.0)
+        .clip(lower_bound=0.0)
+        .alias("velocity"),
     )
 
     mat = torch.stack(
@@ -125,6 +158,10 @@ def _feat_matrix_for_month(
             torch.tensor((frame["amt"].log1p()).to_numpy(), dtype=torch.float32),
             torch.tensor((frame["extra"].log1p()).to_numpy(), dtype=torch.float32),
             torch.tensor(frame["rate"].to_numpy(), dtype=torch.float32),
+            torch.tensor((frame["fraud"].log1p()).to_numpy(), dtype=torch.float32),
+            torch.tensor((frame["avg_amt"].log1p()).to_numpy(), dtype=torch.float32),
+            torch.tensor(frame["partner_density"].to_numpy(), dtype=torch.float32),
+            torch.tensor((frame["velocity"].log1p()).to_numpy(), dtype=torch.float32),
         ],
         dim=1,
     )
@@ -156,7 +193,8 @@ def _edge_tensors(
     src = torch.tensor(sub["_cust_idx"].to_numpy(), dtype=torch.long)
     dst = torch.tensor(sub["_merch_idx"].to_numpy(), dtype=torch.long)
     label = torch.tensor(sub["is_fraud"].to_numpy(), dtype=torch.float32)
-    return torch.stack([src, dst], dim=0), attr_t, label
+    month = torch.tensor(sub["month_idx"].to_numpy(), dtype=torch.long)
+    return torch.stack([src, dst], dim=0), attr_t, label, month
 
 
 def build_snapshots(
@@ -232,23 +270,28 @@ def build_snapshots(
     for s, month in enumerate(months):
         sub = df.filter(pl.col("bucket_idx") == month)
         frac = frac_for[month]
+        # strictly-past calendar boundary for this yearly bucket:
+        # history up to (not including) the bucket's first calendar month.
+        calendar_cut = month * bucket_months
 
-        ei, attr, label = _edge_tensors(sub, frac)
+        ei, attr, label, emonth = _edge_tensors(sub, frac)
 
         data = HeteroData()
         data["customer"].x = _feat_matrix_for_month(
-            hist_cust, "customer_id", customer_ids, month, NODE_FEATURE_DIM
+            hist_cust, "customer_id", customer_ids, calendar_cut, NODE_FEATURE_DIM
         )
         data["merchant"].x = _feat_matrix_for_month(
-            hist_merch, "merchant_id", merchant_ids, month, NODE_FEATURE_DIM
+            hist_merch, "merchant_id", merchant_ids, calendar_cut, NODE_FEATURE_DIM
         )
         data["card"].x = _feat_matrix_for_month(
-            hist_card, "card_id", card_ids, month, NODE_FEATURE_DIM
+            hist_card, "card_id", card_ids, calendar_cut, NODE_FEATURE_DIM
         )
 
         data["customer", "purchased", "merchant"].edge_index = ei
         data["customer", "purchased", "merchant"].edge_attr = attr
         data["customer", "purchased", "merchant"].edge_label = label
+        # fine-grained calendar month per edge (for event-aligned splits)
+        data["customer", "purchased", "merchant"].month_idx = emonth
         data["merchant", "rev_purchased", "customer"].edge_index = ei.flip(0)
         data["merchant", "rev_purchased", "customer"].edge_attr = attr
 

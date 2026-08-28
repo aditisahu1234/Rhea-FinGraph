@@ -37,25 +37,37 @@ above the best single model — not to out-ROC XGBoost in isolation.
 
 ## Concrete upgrade path (ranked by impact)
 
-### 1. Fair, event-aligned split (do FIRST — enables everything else)
-- Add an event-level temporal split mode to `train_gnn.py` so the GNN trains on
-  *transactions* cut at the same train/val/test months as the baseline, not the
-  raw bucket-count split.
+> **Implementation status (2026-08-29):** code for items 1–3 is now **built,
+> tested and in the repo** (commit after `be72496`). The Kaggle notebook
+> `kaggle/train_gnn_t4.ipynb` is patched to run them one-click. What remains is
+> the **T4 re-run itself** (a manual Kaggle step) and then honest fusion. See
+> "Run it" at the end.
+
+### 1. Fair, event-aligned split (do FIRST — enables everything else) ✅ built
+- `train_gnn.py --event-cutoffs C0 C1` partitions snapshots by **calendar
+  month-idx** instead of the raw bucket-count 60/20/20.
+- use `--event-cutoffs 534 568` to match the XGBoost baseline exactly
+  (train<2014-07=534, val 534..568=2017-05, test>=568).
 - Then `gnn_scores.parquet` row-counts match `ibm_full` and it can be fed to
-  `ensemble_fusion.py --gnn-score-file` **honestly** (currently blocked).
+  `ensemble_fusion.py --gnn-score-file` **honestly** (the old count mismatch is
+  gone for this split).
 
-### 2. Richer node features (biggest raw accuracy lever per effort)
-- Per-card / per-customer / per-merchant **rolling amount velocities** and
-  **fraud-rate priors** (reuse the priors JSONs already computed).
-- Node **degree + 2-hop neighbor fraud density** as structural priors.
-- Add as additional node feature dims (4-dim → ~12–16-dim).
+### 2. Richer node features ✅ built (4-dim -> 8-dim)
+- Per-customer / merchant / card, strictly-past: **log1p count, log1p amount,
+  log1p distinct counterparties, fraud rate, log1p fraud volume, log1p avg
+  amount, partner density, log1p spend velocity** (spend per active month).
+- **Latent bug fixed:** the old builder passed the yearly *bucket index* (21–50)
+  as the history-cutoff but compared it against *calendar month-idx* (252–601),
+  so the filter was always false and **every node feature was all-zero**. The
+  GNN was effectively learning with no node signal. `calendar_cut = month *
+  bucket_months` restores real node features (verified: later-snapshot customer
+  features go from 0.00 to abs-mean ~2.1).
 
-### 3. Real architecture + pre-train init
-- hidden 32 → **128–192**, layers 1 → **2–3**, heads 2 → **4–8**, add dropout
-  and a learning-rate schedule.
-- Enable `--init-from pretrain_gnn` — the GraphMAE pre-trained encoder already
-  built in `pretrain_gnn.py` exists exactly for this (this run left it off).
-- Train **20–40 epochs** with early stopping on val AUC instead of 8 flat.
+### 3. Real architecture + pre-train init ✅ built
+- hidden 32 → **192**, layers 1 → **3**, heads 2 → **8**, `--dropout 0.2`,
+  `--lr 1e-3`, **early stopping** `--patience 8`, train **40 epochs**.
+- `--init-from <gnn_pretrained.pt>` wires the self-supervised pre-trained
+  encoder (this run left it off) — the notebook auto-enables it.
 
 ### 4. Tune + calibrate, then fuse
 - Sweep the usual suspects on the fair split (hidden, layers, lr, dim).
@@ -74,3 +86,23 @@ above the best single model — not to out-ROC XGBoost in isolation.
   the code + split mode are ready (code pushed here for a one-click notebook).
 - **Local (me):** feature pipelines, split-mode code, fusion wiring, honest
   metric tables, and the ensemble-delta report.
+
+## Run it (one-click Kaggle re-train)
+
+The notebook `kaggle/train_gnn_t4.ipynb` is patched to run the strong,
+event-aligned config. To kick off the re-train:
+
+1. Upload the **updated repo** to Kaggle (or re-copy `src/` + `kaggle/`); the
+   notebook now calls `graph_snapshots` (8-dim node features) and
+   `train_gnn --event-cutoffs 534 568 --hidden 192 --layers 3 --heads 8
+   --epochs 40 --patience 8`.
+2. In the notebook: **Session options → Accelerator → GPU T4 x2**; the Input
+   dataset `rhea-fingraph-ibm-splits` (train/val/test parquets) must be
+   attached.
+3. **File → Save Version → Save & Run All (Commit)**, wait for *Save
+   complete*, then download `rhea_gnn_artifacts.zip` from the Output page and
+   send it back.
+4. I ingest the new `gnn_scores.parquet` + `gnn_config.json` and run the honest
+   fusion + ensemble-delta comparison against the (now event-aligned, fair)
+   baseline.
+

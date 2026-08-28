@@ -11,7 +11,11 @@ from torch_geometric.data import HeteroData
 
 from fingraph_sentinel.gnn_models import TemporalHeteroGNN
 from fingraph_sentinel.graph_snapshots import NODE_FEATURE_DIM
-from fingraph_sentinel.train_gnn import split_months, write_score_stream
+from fingraph_sentinel.train_gnn import (
+    event_split_months,
+    split_months,
+    write_score_stream,
+)
 
 
 def _mini_snapshot(seed: int, n_edges: int):
@@ -36,6 +40,9 @@ def _mini_snapshot(seed: int, n_edges: int):
         rel.edge_index = torch.stack([s, t])
         rel.edge_attr = torch.randn(n_edges, 9)  # len(EDGE_FEATURES)
         rel.edge_label = (torch.rand(n_edges) < 0.2).float()
+        # fine-grained calendar month per edge; single-valued per snapshot so
+        # event_split_months picks it up via the median
+        rel.month_idx = torch.full((n_edges,), 300 + seed, dtype=torch.long)
     # keep only the scored relation cleanly representative
     return d
 
@@ -96,3 +103,15 @@ def test_split_months_is_exhaustive_and_ordered():
     assert val_m[0] == 18 and val_m[-1] == 23
     assert test_m[0] == 24 and test_m[-1] == 29
     assert train_m + val_m + test_m == list(range(30))
+
+
+def test_event_split_months_partitions_by_calendar_cutoff():
+    """month_idx per snapshot is single-valued; cutoffs split train|val|test."""
+    n_snaps = 20
+    snaps = [_mini_snapshot(i, n_edges=5) for i in range(n_snaps)]
+    # snapshot i has month_idx = 300+i ; cutoffs at 308 (train<308) and 314
+    tr, va, te = event_split_months(snaps, (308, 314))
+    assert tr == list(range(0, 8))
+    assert va == list(range(8, 14))
+    assert te == list(range(14, 20))
+    assert tr + va + te == list(range(n_snaps))
