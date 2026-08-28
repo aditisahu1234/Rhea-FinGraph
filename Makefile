@@ -29,6 +29,8 @@ help:
 	@printf "  make fusion            Train the ensemble-stack orchestrator\n"
 	@printf "  make fusion-smoke      Capped-row ensemble stack smoke test on CPU\n"
 	@printf "  make helix             Layer 5: per-feature drift + retrain trigger\n"
+	@printf "  make helix-report      Regenerate the Layer 5 drift report (capped rows)\n"
+	@printf "  make api-server        Run the Layer 0 FastAPI gateway on :8000\n"
 
 setup:
 	python3 -m venv .venv
@@ -133,4 +135,13 @@ fusion-smoke:
 
 helix:
 	.venv/bin/python -m fingraph_sentinel.helix \
+		--out-json artifacts/models/baseline-online-xgb/helix_report.json
+
+api-server:
+	OMP_NUM_THREADS=4 .venv/bin/python -m uvicorn \
+		fingraph_sentinel.main:app --host 127.0.0.1 --port 8000
+
+helix-report:
+	.venv/bin/python -m fingraph_sentinel.helix \
+		--max-train-rows 50000 --max-eval-rows 30000 \
 		--out-json artifacts/models/baseline-online-xgb/helix_report.json

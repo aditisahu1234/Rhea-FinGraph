@@ -86,3 +86,41 @@ make train-baseline         # full chronological train/validation/test run
 make helix            # per-feature drift report (train vs val/test)
 ```
 
+## Layer 0 (API gateway + dashboard)
+
+A live vertical slice serving the real model with SHAP explanations and Helix
+(Layer 5) drift, ready to demo.
+
+```bash
+# terminal 1 - risk API
+make api-server                 # FastAPI on :8000
+
+# terminal 2 - dashboard (from apps/dashboard/)
+cd apps/dashboard
+npm i
+npm run dev                     # Next.js on :3001
+```
+
+### API surface
+- `GET  /api/v1/health/{live,ready}` — liveness / model readiness
+- `GET  /api/v1/model/status` — KPIs + thresholds + locked test metrics
+- `POST /api/v1/transactions/score` — score one payment event; returns the
+  decision band, calibrated fraud probability and **SHAP top reasons**
+  (Layer 4) plus rule-based context reasons. Fails **safe** (manual review) if
+  the model errors — never fails open.
+- `GET  /api/v1/helix/drift` — per-feature drift + retrain trigger (Layer 5)
+
+The dashboard polls status + drift every 10s, lets you type a transaction and
+watch the gauge, SHAP reason bars, and Helix culprit tags update live.
+
+## GNN strengthening
+
+The first full-data temporal GNN (val ROC 0.627 / test 0.466) is a smoke-tier
+run on a harder holdout than the baseline — not a fair loss. The honest,
+pitchable story is the **ensemble** (GBDT + GNN + AE + Helix), not "GNN alone
+beats XGBoost". See [`docs/GNN_STRENGTHENING.md`](docs/GNN_STRENGTHENING.md)
+for the ranked upgrade path (fair event-aligned split → richer node features →
+real architecture + pre-train init → calibrate & fuse) and the honest scoreboard
+in [`docs/METRICS.md`](docs/METRICS.md).
+
+

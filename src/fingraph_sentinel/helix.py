@@ -224,7 +224,17 @@ def main():
     for name, walk in (("val", val), ("test", test)):
         table = feature_drift_table(walk, MONITOR_FEATURES, train, walk)
         trig = retraining_trigger(table)
-        report[name] = {"trigger": trig}
+        feats = [
+            {
+                "feature": r["feature"],
+                "ref_mean": r["ref_mean"],
+                "obs_mean": r["obs_mean"],
+                "psi": r["psi"],
+                "z": r["z"],
+            }
+            for r in table.iter_rows(named=True)
+        ]
+        report[name] = {"trigger": trig, "features": feats}
         print(f"\n=== feature drift: train(reference) vs {name} ===")
         print("feature                 mean_train  mean_now    psi      z")
         for row in table.iter_rows(named=True):

@@ -1,3 +1,9 @@
+"""Layer 0 API behaviour tests (new serving architecture, no real model needed).
+
+Monkeypatches the new seams (_model_ready, score_event, load_helix_drift) so
+these tests are deterministic and do not require a trained model on disk.
+"""
+
 from fastapi.testclient import TestClient
 
 from fingraph_sentinel.main import app
@@ -14,57 +20,61 @@ SCORE_PAYLOAD = {
 }
 
 
-def _force_no_registry(monkeypatch):
-    monkeypatch.setattr("fingraph_sentinel.main.get_registry", lambda: None)
+def _set_model_ready(monkeypatch, ready: bool):
+    monkeypatch.setattr("fingraph_sentinel.main._model_ready", lambda: ready)
 
 
 def test_liveness() -> None:
     response = client.get("/api/v1/health/live")
-
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
 
 
-def test_model_status_reports_untrained_when_registry_missing(monkeypatch) -> None:
-    _force_no_registry(monkeypatch)
-    response = client.get("/api/v1/model/status")
+def test_health_ready_reflects_model_presence(monkeypatch) -> None:
+    _set_model_ready(monkeypatch, True)
+    assert client.get("/api/v1/health/ready").json()["model_registered"] is True
+    _set_model_ready(monkeypatch, False)
+    assert client.get("/api/v1/health/ready").json()["model_registered"] is False
 
-    assert response.status_code == 200
-    body = response.json()
+
+def test_model_status_untrained_when_no_model(monkeypatch) -> None:
+    _set_model_ready(monkeypatch, False)
+    body = client.get("/api/v1/model/status").json()
     assert body["ready"] is False
 
 
-def test_score_contract_returns_safe_review_before_model_exists(monkeypatch) -> None:
-    _force_no_registry(monkeypatch)
+def test_score_falls_back_to_review_without_model(monkeypatch) -> None:
+    _set_model_ready(monkeypatch, False)
     response = client.post("/api/v1/transactions/score", json=SCORE_PAYLOAD)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["action"] == "review"
+    assert body["is_model_ready"] is False
 
-    assert response.status_code == 202
-    assert response.json()["action"] == "review"
-    assert response.json()["is_model_ready"] is False
 
+def test_score_passes_through_model_result(monkeypatch) -> None:
+    from fingraph_sentinel.serving import ScoredReason, ScoreResult
 
-def test_score_uses_registered_model(monkeypatch) -> None:
-    from fingraph_sentinel.model_registry import ScoreOutcome
-    from fingraph_sentinel.schemas import RiskReason
+    _set_model_ready(monkeypatch, True)
 
-    class StubRegistry:
-        def score_event(self, event):
-            return ScoreOutcome(
-                probability=0.42,
-                weighted_probability=0.9,
-                action="review",
-                reasons=[
-                    RiskReason(
-                        feature="stub", direction="context", detail="deterministic stub"
-                    )
-                ],
-                model_version="stub_v9",
-            )
+    def fake_score(values, feature_columns, boilerplate_reasons=None):
+        return ScoreResult(
+            transaction_id="txn_001",
+            model_version="stub_v9",
+            fraud_probability=0.42,
+            action="review",
+            reasons=[
+                ScoredReason(
+                    feature="stub",
+                    direction="context",
+                    detail="deterministic stub",
+                )
+            ],
+        )
 
-    monkeypatch.setattr("fingraph_sentinel.main.get_registry", lambda: StubRegistry())
+    monkeypatch.setattr("fingraph_sentinel.main.score_event", fake_score)
     response = client.post("/api/v1/transactions/score", json=SCORE_PAYLOAD)
-
-    assert response.status_code == 202
+    assert response.status_code == 200
     body = response.json()
     assert body["is_model_ready"] is True
     assert body["model_version"] == "stub_v9"
@@ -73,15 +83,22 @@ def test_score_uses_registered_model(monkeypatch) -> None:
     assert body["reasons"][0]["feature"] == "stub"
 
 
-def test_score_fails_safe_when_registry_errors(monkeypatch) -> None:
-    class BrokenRegistry:
-        def score_event(self, event):
-            raise RuntimeError("boom")
+def test_score_fails_safe_when_scoring_errors(monkeypatch) -> None:
+    _set_model_ready(monkeypatch, True)
 
-    monkeypatch.setattr("fingraph_sentinel.main.get_registry", lambda: BrokenRegistry())
+    def broken_score(values, feature_columns, boilerplate_reasons=None):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr("fingraph_sentinel.main.score_event", broken_score)
     response = client.post("/api/v1/transactions/score", json=SCORE_PAYLOAD)
-
-    assert response.status_code == 202
+    assert response.status_code == 200
     body = response.json()
+    # scoring must fail safe, never fail open
     assert body["action"] == "review"
     assert body["is_model_ready"] is False
+
+
+def test_helix_drift_empty_default(monkeypatch) -> None:
+    monkeypatch.setattr("fingraph_sentinel.main.load_helix_drift", lambda: None)
+    body = client.get("/api/v1/helix/drift").json()
+    assert body["trigger"] == "NO"

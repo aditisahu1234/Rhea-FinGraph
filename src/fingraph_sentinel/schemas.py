@@ -35,6 +35,9 @@ class RiskReason(BaseModel):
     feature: str
     direction: Literal["increases_risk", "reduces_risk", "context"]
     detail: str
+    magnitude: float | None = Field(
+        default=None, description="Signed contribution, e.g. SHAP margin value"
+    )
 
 
 class RiskDecision(BaseModel):
@@ -44,3 +47,35 @@ class RiskDecision(BaseModel):
     action: Literal["allow", "review", "hold"]
     reasons: list[RiskReason]
     is_model_ready: bool
+    processed_at: str | None = Field(
+        default=None, description="ISO-8601 processing timestamp"
+    )
+
+
+class FeatureDrift(BaseModel):
+    feature: str
+    ref_mean: float | None = None
+    obs_mean: float | None = None
+    psi: float | None = None
+    z: float | None = None
+
+
+class HelixDriftReport(BaseModel):
+    trigger: str
+    score: float | None = None
+    n_features: int = 0
+    n_culprits: int = 0
+    culprits: list[str] = []
+    reasons: list[str] = []
+    features: list[FeatureDrift] = []
+
+
+class ModelStatus(BaseModel):
+    ready: bool
+    model_version: str
+    backend: str | None = None
+    trained_at: str | None = None
+    training_rows: int | None = None
+    thresholds: dict | None = None
+    metrics_validation: dict | None = None
+    metrics_test_locked: dict | None = None
