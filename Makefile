@@ -28,6 +28,7 @@ help:
 	@printf "  make explain-lime      LIME explanation for one row\n"
 	@printf "  make fusion            Train the ensemble-stack orchestrator\n"
 	@printf "  make fusion-smoke      Capped-row ensemble stack smoke test on CPU\n"
+	@printf "  make helix             Layer 5: per-feature drift + retrain trigger\n"
 
 setup:
 	python3 -m venv .venv
@@ -129,3 +130,7 @@ fusion-smoke:
 	rm -rf artifacts/models/ensemble-fusion-smoke
 	OMP_NUM_THREADS=1 .venv/bin/python -m fingraph_sentinel.ensemble_fusion --smoke \
 		--n-jobs 1 --out artifacts/models/ensemble-fusion-smoke
+
+helix:
+	.venv/bin/python -m fingraph_sentinel.helix \
+		--out-json artifacts/models/baseline-online-xgb/helix_report.json

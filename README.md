@@ -66,3 +66,23 @@ make train-baseline-smoke   # ~20 s pipeline sanity check
 make train-baseline         # full chronological train/validation/test run
 ```
 
+## Layer 4 & 5 (ensemble + self-healing memory)
+
+- `make drift-score` / `make drift-monitor`: EWMA/CUSUM/PSI *level* drift.
+- `make explain-shap` / `explain-one` / `explain-lime`: SHAP + LIME on the
+  serving model.
+- `make fusion`: stack XGBoost+LightGBM+CatBoost+autoencoder (optionally GNN
+  via `--gnn-score-file`).
+- `make helix`: Layer 5 per-*feature* drift + retrain trigger + PCEC episodic
+  memory. This catches the ranking drift the level monitor cannot.
+
+> Honest finding (Layer 5 motivation): the XGBoost baseline's mean score stays
+> flat (~0.0058) across 2015-2020 while test AUC collapses 0.89 -> 0.60.
+> Per-feature drift explains it: `channel_swipe` PSI grows to ~5.9 and chip
+> usage shifts 0.0 -> 0.79 as the population migrates channels. Level-based
+> monitors are blind to this; Helix's feature-level watch is not.
+
+```bash
+make helix            # per-feature drift report (train vs val/test)
+```
+
