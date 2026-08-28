@@ -23,6 +23,11 @@ help:
 	@printf "  make drift-score       Score train/val/test with the serving model\n"
 	@printf "  make drift-monitor     Monthly EWMA/CUSUM/PSI drift report\n"
 	@printf "  make drift-smoke       Capped drift pipeline end-to-end sanity check\n"
+	@printf "  make explain-shap      SHAP batch explanations from the serving model\n"
+	@printf "  make explain-one       Top risk reasons for one row (SHAP)\n"
+	@printf "  make explain-lime      LIME explanation for one row\n"
+	@printf "  make fusion            Train the ensemble-stack orchestrator\n"
+	@printf "  make fusion-smoke      Capped-row ensemble stack smoke test on CPU\n"
 
 setup:
 	python3 -m venv .venv
@@ -106,3 +111,21 @@ drift-smoke:
 	.venv/bin/python -m fingraph_sentinel.drift_monitor score-streams \
 		--max-train-rows 300000 --max-eval-rows 200000
 	.venv/bin/python -m fingraph_sentinel.drift_monitor monitor
+
+explain-shap:
+	.venv/bin/python -m fingraph_sentinel.explain_risk batch --n 2000
+
+explain-one:
+	.venv/bin/python -m fingraph_sentinel.explain_risk one --row-idx 42
+
+explain-lime:
+	.venv/bin/python -m fingraph_sentinel.explain_risk lime --row-idx 42
+
+fusion:
+	OMP_NUM_THREADS=1 .venv/bin/python -m fingraph_sentinel.ensemble_fusion \
+		--n-jobs 1
+
+fusion-smoke:
+	rm -rf artifacts/models/ensemble-fusion-smoke
+	OMP_NUM_THREADS=1 .venv/bin/python -m fingraph_sentinel.ensemble_fusion --smoke \
+		--n-jobs 1 --out artifacts/models/ensemble-fusion-smoke
