@@ -20,6 +20,9 @@ help:
 	@printf "  make pretrain-gnn-smoke Capped-row pre-training smoke test on CPU\n"
 	@printf "  make train-ae          Autoencoder anomaly detector (Layer 4)\n"
 	@printf "  make train-ae-smoke    Capped-row autoencoder smoke test on CPU\n"
+	@printf "  make drift-score       Score train/val/test with the serving model\n"
+	@printf "  make drift-monitor     Monthly EWMA/CUSUM/PSI drift report\n"
+	@printf "  make drift-smoke       Capped drift pipeline end-to-end sanity check\n"
 
 setup:
 	python3 -m venv .venv
@@ -92,3 +95,14 @@ train-ae-smoke:
 
 ingest-graph:
 	.venv/bin/python -m fingraph_sentinel.graph_ingest
+
+drift-score:
+	.venv/bin/python -m fingraph_sentinel.drift_monitor score-streams
+
+drift-monitor:
+	.venv/bin/python -m fingraph_sentinel.drift_monitor monitor
+
+drift-smoke:
+	.venv/bin/python -m fingraph_sentinel.drift_monitor score-streams \
+		--max-train-rows 300000 --max-eval-rows 200000
+	.venv/bin/python -m fingraph_sentinel.drift_monitor monitor
