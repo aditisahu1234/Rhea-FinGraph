@@ -78,4 +78,35 @@ class ModelStatus(BaseModel):
     training_rows: int | None = None
     thresholds: dict | None = None
     metrics_validation: dict | None = None
+
+
+# ---- Layer 6: compliance audit + observability --------------------------
+
+
+class AuditRecord(BaseModel):
+    """One tamper-evident entry in the Layer 6 audit hash chain."""
+
+    id: str
+    event_type: str
+    payload: dict = {}
+    prev_hash: str = ""
+    hash: str = ""
+    audited_at: float | None = None
+    seq: int | None = None
+
+
+class AuditHealth(BaseModel):
+    healthy: bool
+    backend: str
+    buffered: int = 0
+    total: int = 0
+
+
+class AuditSummary(BaseModel):
+    total: int
+    backend: str
+    buffered: int = 0
+    valid: bool = False
+    verified_records: int = 0
+    store_healthy: bool = False
     metrics_test_locked: dict | None = None

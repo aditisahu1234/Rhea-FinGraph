@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 
 from fastapi import FastAPI, status
 
+from fingraph_sentinel.audit import Ledger
 from fingraph_sentinel.config import get_settings
 from fingraph_sentinel.runtime import (
     boilerplate_reasons,
@@ -9,6 +10,9 @@ from fingraph_sentinel.runtime import (
     load_helix_drift,
 )
 from fingraph_sentinel.schemas import (
+    AuditHealth,
+    AuditRecord,
+    AuditSummary,
     FeatureDrift,
     HelixDriftReport,
     ModelStatus,
@@ -20,9 +24,22 @@ from fingraph_sentinel.serving import MODEL_DIR, score_event
 
 settings = get_settings()
 
+# Layer 6 audit ledger: Postgres when configured, in-memory fail-safe otherwise.
+# Purposely constructed at import with .default() so an unreachable DB never
+# raises and the API stays up (the ledger buffers and reports unhealthy).
+_ledger: Ledger | None = None
+
+
+def get_ledger() -> Ledger:
+    global _ledger  # noqa: PLW0603 - lazy singleton so tests can reset it
+    if _ledger is None:
+        _ledger = Ledger.default(settings.postgres_url)
+    return _ledger
+
+
 app = FastAPI(
     title=settings.project_name,
-    version="0.3.0",
+    version="0.4.0",
     description=(
         "Defense-only merchant fraud risk intelligence. Recommendations are auditable "
         "and never execute payment actions."
@@ -69,9 +86,11 @@ def model_status() -> ModelStatus:
     tags=["risk"],
 )
 def score_transaction(event: PaymentEvent) -> RiskDecision:
-    """Score a single payment event and explain the decision."""
+    """Score a single payment event, explain the decision, and audit it."""
     if not _model_ready():
-        return _safe_review_decision(event)
+        decision = _safe_review_decision(event)
+        _audit("decision.review_failsafe", event, decision)
+        return decision
     try:
         values = event_feature_dict(event)
         result = score_event(
@@ -80,8 +99,10 @@ def score_transaction(event: PaymentEvent) -> RiskDecision:
             boilerplate_reasons=boilerplate_reasons(event),
         )
     except Exception:  # noqa: BLE001 - scoring must fail safe, never fail open
-        return _safe_review_decision(event)
-    return RiskDecision(
+        decision = _safe_review_decision(event)
+        _audit("decision.fail_open_blocked", event, decision)
+        return decision
+    decision = RiskDecision(
         transaction_id=event.transaction_id,
         model_version=result.model_version,
         fraud_probability=round(result.fraud_probability, 6),
@@ -98,6 +119,41 @@ def score_transaction(event: PaymentEvent) -> RiskDecision:
         is_model_ready=True,
         processed_at=datetime.now(UTC).isoformat(),
     )
+    _audit("decision.scored", event, decision)
+    return decision
+
+
+def _audit(event_type: str, event: PaymentEvent, decision: RiskDecision) -> None:
+    """Append one decision to the Layer 6 ledger. Never raises (fail-safe)."""
+    try:
+        get_ledger().append(
+            event_type,
+            {
+                "transaction_id": event.transaction_id,
+                "model_version": decision.model_version,
+                "action": decision.action,
+                "fraud_probability": decision.fraud_probability,
+                "is_model_ready": decision.is_model_ready,
+                "n_reasons": len(decision.reasons),
+                "reasons": [
+                    {
+                        "feature": r.feature,
+                        "direction": r.direction,
+                        "detail": r.detail,
+                        "magnitude": r.magnitude,
+                    }
+                    for r in decision.reasons
+                ],
+                "amount": str(event.amount),
+                "currency": event.currency,
+                "customer_id": event.customer_id,
+                "merchant_id": event.merchant_id,
+                "payment_channel": event.payment_channel,
+                "processed_at": decision.processed_at,
+            },
+        )
+    except Exception:  # noqa: BLE001 - audit must never break scoring
+        return
 
 
 @app.get("/api/v1/helix/drift", response_model=HelixDriftReport, tags=["helix"])
@@ -136,6 +192,50 @@ def metadata() -> dict[str, str]:
         "generated_at": datetime.now(UTC).isoformat(),
         "safety_mode": "defense-only",
     }
+
+
+@app.get("/api/v1/audit/health", response_model=AuditHealth, tags=["audit"])
+def audit_health() -> AuditHealth:
+    """Layer 6 audit store health: backend, healthy, buffered fallback count."""
+    led = get_ledger()
+    h = led.health()
+    return AuditHealth(
+        healthy=h["healthy"], backend=h["backend"], buffered=h["buffered"],
+        total=h["total"],
+    )
+
+
+@app.get("/api/v1/audit/recent", response_model=list[AuditRecord], tags=["audit"])
+def audit_recent(limit: int = 20) -> list[AuditRecord]:
+    """Most recent tamper-evident audit entries (newest first)."""
+    limit = max(1, min(int(limit), 200))
+    return [AuditRecord(**r) for r in get_ledger().recent(limit)]
+
+
+@app.get("/api/v1/audit/summary", response_model=AuditSummary, tags=["audit"])
+def audit_summary() -> AuditSummary:
+    """Count + integrity verification of the whole audit hash chain."""
+    led = get_ledger()
+    return AuditSummary(
+        total=led.count(),
+        backend=type(led.store).__name__,
+        buffered=led.health()["buffered"],
+        valid=bool(led.verify()["valid"]),
+        verified_records=led.verify()["records"],
+        store_healthy=led.store.is_healthy(),
+    )
+
+
+@app.get("/api/v1/audit/verify", tags=["audit"])
+def audit_verify() -> dict:
+    """Full chain-integrity verification: detects any tamper / reorder."""
+    return get_ledger().verify()
+
+
+@app.get("/api/v1/audit/daily", tags=["audit"])
+def audit_daily(days: int = 14) -> list[dict]:
+    """Per-day decision/exception volume rollup (UTC), newest first."""
+    return get_ledger().daily(days=max(1, min(int(days), 90)))
 
 
 def _config() -> dict:

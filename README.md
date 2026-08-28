@@ -113,6 +113,27 @@ npm run dev                     # Next.js on :3001
 The dashboard polls status + drift every 10s, lets you type a transaction and
 watch the gauge, SHAP reason bars, and Helix culprit tags update live.
 
+## Layer 6 (compliance audit + observability)
+
+Every scored decision is recorded in a **tamper-evident, append-only audit
+log** so the claim "every decision is auditable" is true, not aspirational.
+
+- **Hash chain.** Each record stores the SHA-256 of the previous record plus
+  its own payload, chaining the whole log. Any retrofit edit, deletion, or
+  reorder is detected by `GET /api/v1/audit/verify`.
+- **Fail-safe.** Appends never break scoring. If the durable store is down the
+  ledger buffers in memory and reports itself unhealthy instead of crashing.
+- **Backends.** PostgreSQL (`audit_ledger` table) when reachable; in-memory
+  otherwise (tests / local runs without Docker). Swappable behind a small
+  interface in `src/fingraph_sentinel/audit.py`.
+- **API.** `GET /api/v1/audit/health`, `/api/v1/audit/recent`, `/api/v1/audit/summary`,
+  `/api/v1/audit/verify`. The dashboard's **Audit ledger** panel shows the
+  live decisions, store health, and chain-integrity status.
+
+```bash
+make audit-smoke          # score a few events + verify the chain locally
+```
+
 ## GNN strengthening
 
 The first full-data temporal GNN (val ROC 0.627 / test 0.466) is a smoke-tier

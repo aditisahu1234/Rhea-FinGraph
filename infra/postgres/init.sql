@@ -25,3 +25,17 @@ CREATE TABLE IF NOT EXISTS model_decisions (
 
 CREATE INDEX IF NOT EXISTS model_decisions_transaction_id_idx
     ON model_decisions (transaction_id);
+
+-- Layer 6: tamper-evident compliance audit ledger (hash chain).
+CREATE TABLE IF NOT EXISTS audit_ledger (
+    seq        BIGSERIAL PRIMARY KEY,
+    id         UUID NOT NULL,
+    event_type TEXT NOT NULL,
+    payload    JSONB NOT NULL DEFAULT '{}'::jsonb,
+    prev_hash  TEXT NOT NULL,
+    hash       TEXT NOT NULL,
+    audited_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS audit_ledger_seq_idx
+    ON audit_ledger (seq DESC);

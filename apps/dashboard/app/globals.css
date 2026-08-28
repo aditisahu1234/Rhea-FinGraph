@@ -160,3 +160,17 @@ input:focus, select:focus { border-color: var(--accent); }
 .layer-v { color: var(--muted); font-size: 0.78rem; margin-top: 3px; display: block; }
 
 .foot { text-align: center; font-size: 0.78rem; margin-top: 34px; }
+
+/* ---------- audit ledger (Layer 6) ---------- */
+.audit-pills { display: flex; gap: 6px; flex-wrap: wrap; }
+.pill.small { padding: 2px 8px; font-size: 0.66rem; }
+.audit-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 4px 0 16px; }
+.audit-stats .stat { background: rgba(157, 186, 225, 0.06); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.audit-stats .stat-v { display: block; font-size: 1.5rem; font-weight: 800; }
+.audit-stats .stat-v.warm { color: var(--warn); }
+.audit-stats .stat-k { color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; }
+.audit-table { display: flex; flex-direction: column; }
+.audit-row { display: grid; grid-template-columns: 1.4fr 1.2fr 0.7fr 0.8fr 1.1fr; gap: 8px; padding: 8px 6px; border-bottom: 1px solid var(--line); font-size: 0.8rem; align-items: center; }
+.audit-row.audit-head { color: var(--muted); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.06em; border-bottom: 2px solid var(--line); }
+.mono { font-variant-numeric: tabular-nums; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.hash { color: var(--muted); }

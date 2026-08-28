@@ -91,3 +91,56 @@ export async function scoreTransaction(
   if (!res.ok) throw new Error(`score -> ${res.status}`);
   return (await res.json()) as RiskDecision;
 }
+
+// ---- Layer 6: compliance audit + observability --------------------------
+
+export interface AuditRecord {
+  id: string;
+  event_type: string;
+  payload: Record<string, unknown>;
+  prev_hash: string;
+  hash: string;
+  audited_at: number | null;
+  seq: number | null;
+}
+
+export interface AuditHealth {
+  healthy: boolean;
+  backend: string;
+  buffered: number;
+  total: number;
+}
+
+export interface AuditSummary {
+  total: number;
+  backend: string;
+  buffered: number;
+  valid: boolean;
+  verified_records: number;
+  store_healthy: boolean;
+}
+
+export interface AuditVerify {
+  valid: boolean;
+  records: number;
+  first_broken_index: number | null;
+  backend: string;
+  store_healthy: boolean;
+  buffered: number;
+}
+
+export function fetchAuditHealth(): Promise<AuditHealth> {
+  return getJSON<AuditHealth>("/api/v1/audit/health");
+}
+
+export function fetchAuditRecent(limit = 10): Promise<AuditRecord[]> {
+  return getJSON<AuditRecord[]>(`/api/v1/audit/recent?limit=${limit}`);
+}
+
+export function fetchAuditSummary(): Promise<AuditSummary> {
+  return getJSON<AuditSummary>("/api/v1/audit/summary");
+}
+
+export function fetchAuditVerify(): Promise<AuditVerify> {
+  return getJSON<AuditVerify>("/api/v1/audit/verify");
+}
