@@ -18,6 +18,8 @@ help:
 	@printf "  make train-gnn-smoke   Capped-row GNN smoke test on CPU\n"
 	@printf "  make pretrain-gnn      Self-supervised GNN pre-training (masked features)\n"
 	@printf "  make pretrain-gnn-smoke Capped-row pre-training smoke test on CPU\n"
+	@printf "  make train-ae          Autoencoder anomaly detector (Layer 4)\n"
+	@printf "  make train-ae-smoke    Capped-row autoencoder smoke test on CPU\n"
 
 setup:
 	python3 -m venv .venv
@@ -79,6 +81,14 @@ pretrain-gnn-smoke:
 	rm -rf artifacts/graph/gnn-pretrain-smoke
 	.venv/bin/python -m fingraph_sentinel.pretrain_gnn --data-dir artifacts/graph/snapshots-smoke \
 		--out artifacts/graph/gnn-pretrain-smoke --smoke --smoke-offset 20
+
+train-ae:
+	.venv/bin/python -m fingraph_sentinel.anomaly_autoencoder
+
+train-ae-smoke:
+	rm -rf artifacts/models/anomaly-ae-smoke
+	.venv/bin/python -m fingraph_sentinel.anomaly_autoencoder --smoke \
+		--out artifacts/models/anomaly-ae-smoke
 
 ingest-graph:
 	.venv/bin/python -m fingraph_sentinel.graph_ingest
