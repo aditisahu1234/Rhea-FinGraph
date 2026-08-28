@@ -105,6 +105,54 @@ def evaluate_temporal(
     }
 
 
+def write_score_stream(
+    model: TemporalHeteroGNN,
+    snapshots: list,
+    train_months: list[int],
+    val_months: list[int],
+    test_months: list[int],
+    device: torch.device,
+    out_dir: Path,
+) -> None:
+    """Score every edge in train/val/test and write gnn_scores.parquet.
+
+    Row order is exactly [train, val, test] with a ``split`` column and a
+    ``score`` column (calibrated sigmoid probability), matching the contract
+    the ensemble_fusion orchestrator expects for ``--gnn-score-file``.
+    """
+    import polars as pl
+
+    model.eval()
+    max_month = max(train_months + val_months + test_months)
+    with torch.no_grad():
+        H = model.compute_embeddings(snapshots, max_month, device)
+        split_series, score_series = [], []
+        for split_name, months in (
+            ("train", train_months),
+            ("val", val_months),
+            ("test", test_months),
+        ):
+            for m in months:
+                ei, ea, _ = purchased_edges(snapshots[m], device)
+                logits = model.score_edges(H, m, ei, ea)
+                p = torch.sigmoid(logits).detach().cpu().numpy()
+                split_series.append(pl.Series("split", [split_name] * len(p), dtype=pl.Utf8))
+                score_series.append(pl.Series("score", p, dtype=pl.Float64))
+    df = pl.DataFrame(
+        {
+            "split": pl.concat(split_series),
+            "score": pl.concat(score_series),
+        }
+    )
+    out = out_dir / "gnn_scores.parquet"
+    df.write_parquet(out)
+    counts = df.group_by("split").len()
+    print(f"[train] score stream -> {out} ({len(df):,} rows)")
+    for row in counts.iter_rows():
+        print(f"         {row[0]!s:6s} {row[1]:>12,}")
+    del df
+
+
 def train_temporal(
     snapshots: list,
     train_months: list[int],
@@ -195,6 +243,11 @@ def train_temporal(
     model.to(device)
     val = evaluate_temporal(model, snapshots, val_months, device)
     test = evaluate_temporal(model, snapshots, test_months, device)
+
+    # score stream for the ensemble-fusion orchestrator (--gnn-score-file)
+    write_score_stream(
+        model, snapshots, train_months, val_months, test_months, device, out_dir
+    )
 
     torch.save(best_state, out_dir / "gnn_temporal.pt")
     return {
