@@ -24,9 +24,11 @@ import type {
 import Scorer from "./components/Scorer";
 import DriftPanel from "./components/DriftPanel";
 import AuditPanel from "./components/AuditPanel";
+import StreamingPanel from "./components/StreamingPanel";
 import MetricsStrip from "./components/MetricsStrip";
 
 const layers = [
+  ["1 · Streaming velocity", "rolling 1h/24h/7d · strictly-past · Redis/in-mem"],
   ["2 · Graph store", "Neo4j · 24.39M edges · 30 snapshots"],
   ["3 · Temporal GNN", "trained on Kaggle T4 · 46K params"],
   ["4 · Ensemble risk", "XGBoost + AE + SHAP/LIME explainability"],
@@ -112,6 +114,10 @@ export default function Home() {
           />
         </section>
       </div>
+
+      <section className="panel">
+        <StreamingPanel />
+      </section>
 
       <section className="panel">
         <DriftPanel report={drift} />

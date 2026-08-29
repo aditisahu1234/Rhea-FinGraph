@@ -144,3 +144,40 @@ export function fetchAuditSummary(): Promise<AuditSummary> {
 export function fetchAuditVerify(): Promise<AuditVerify> {
   return getJSON<AuditVerify>("/api/v1/audit/verify");
 }
+
+// ---- Layer 1: streaming velocity store --------------------------------
+
+export interface StreamingHealth {
+  layer: string;
+  read_contract: string;
+  healthy: boolean;
+  backend: string;
+  observations: number;
+  total_flowed_keys: number | null;
+  entries?: Record<string, number>;
+}
+
+export interface StreamingWindow {
+  count: number;
+  amount: number;
+}
+
+export interface StreamingSnapshot {
+  entity: string;
+  id: string;
+  windows: Record<string, StreamingWindow>;
+  priors: Record<string, number>;
+}
+
+export function fetchStreamingHealth(): Promise<StreamingHealth> {
+  return getJSON<StreamingHealth>("/api/v1/streaming/health");
+}
+
+export function fetchStreamingSnapshot(
+  entity: string,
+  entityId: string
+): Promise<StreamingSnapshot> {
+  return getJSON<StreamingSnapshot>(
+    `/api/v1/streaming/snapshot?entity=${encodeURIComponent(entity)}&entity_id=${encodeURIComponent(entityId)}`
+  );
+}

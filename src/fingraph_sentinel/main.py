@@ -21,6 +21,7 @@ from fingraph_sentinel.schemas import (
     RiskReason,
 )
 from fingraph_sentinel.serving import MODEL_DIR, score_event
+from fingraph_sentinel.streaming import VelocityFeatureService
 
 settings = get_settings()
 
@@ -35,6 +36,19 @@ def get_ledger() -> Ledger:
     if _ledger is None:
         _ledger = Ledger.default(settings.postgres_url)
     return _ledger
+
+
+# Layer 1 streaming velocity store: Redis when configured, in-memory fail-safe
+# otherwise. Built the same way as the ledger so an unreachable store never
+# raises and never breaks scoring.
+_velocity: VelocityFeatureService | None = None
+
+
+def get_velocity() -> VelocityFeatureService:
+    global _velocity  # noqa: PLW0603 - lazy singleton so tests can reset it
+    if _velocity is None:
+        _velocity = VelocityFeatureService.default(settings.redis_url)
+    return _velocity
 
 
 app = FastAPI(
@@ -86,41 +100,53 @@ def model_status() -> ModelStatus:
     tags=["risk"],
 )
 def score_transaction(event: PaymentEvent) -> RiskDecision:
-    """Score a single payment event, explain the decision, and audit it."""
-    if not _model_ready():
-        decision = _safe_review_decision(event)
-        _audit("decision.review_failsafe", event, decision)
-        return decision
+    """Score a single payment event, explain the decision, and audit it.
+
+    Layer 1 ordering guarantee: the streaming velocity features are computed
+    (strictly-past, read-only) before the event is committed to the store, so a
+    transaction never counts towards its own risk. The event is always committed
+    afterwards — even on a scoring failure — so live velocity state accumulates
+    as real traffic flows.
+    """
+    velocity = get_velocity().compute(event)
     try:
-        values = event_feature_dict(event)
-        result = score_event(
-            values,
-            feature_columns=list(_config()["feature_columns"]),
-            boilerplate_reasons=boilerplate_reasons(event),
-        )
-    except Exception:  # noqa: BLE001 - scoring must fail safe, never fail open
-        decision = _safe_review_decision(event)
-        _audit("decision.fail_open_blocked", event, decision)
-        return decision
-    decision = RiskDecision(
-        transaction_id=event.transaction_id,
-        model_version=result.model_version,
-        fraud_probability=round(result.fraud_probability, 6),
-        action=result.action,  # type: ignore[arg-type]
-        reasons=[
-            RiskReason(
-                feature=r.feature,
-                direction=r.direction,  # type: ignore[arg-type]
-                detail=r.detail,
-                magnitude=r.magnitude,
+        if not _model_ready():
+            decision = _safe_review_decision(event)
+            _audit("decision.review_failsafe", event, decision)
+            return decision
+        try:
+            values = event_feature_dict(event, velocity=velocity)
+            result = score_event(
+                values,
+                feature_columns=list(_config()["feature_columns"]),
+                boilerplate_reasons=boilerplate_reasons(event),
             )
-            for r in result.reasons
-        ],
-        is_model_ready=True,
-        processed_at=datetime.now(UTC).isoformat(),
-    )
-    _audit("decision.scored", event, decision)
-    return decision
+        except Exception:  # noqa: BLE001 - scoring must fail safe, never fail open
+            decision = _safe_review_decision(event)
+            _audit("decision.fail_open_blocked", event, decision)
+            return decision
+        decision = RiskDecision(
+            transaction_id=event.transaction_id,
+            model_version=result.model_version,
+            fraud_probability=round(result.fraud_probability, 6),
+            action=result.action,  # type: ignore[arg-type]
+            reasons=[
+                RiskReason(
+                    feature=r.feature,
+                    direction=r.direction,  # type: ignore[arg-type]
+                    detail=r.detail,
+                    magnitude=r.magnitude,
+                )
+                for r in result.reasons
+            ],
+            is_model_ready=True,
+            processed_at=datetime.now(UTC).isoformat(),
+        )
+        _audit("decision.scored", event, decision)
+        return decision
+    finally:
+        # Commit the event into the streaming store after read + scoring, always.
+        get_velocity().observe(event)
 
 
 def _audit(event_type: str, event: PaymentEvent, decision: RiskDecision) -> None:
@@ -236,6 +262,24 @@ def audit_verify() -> dict:
 def audit_daily(days: int = 14) -> list[dict]:
     """Per-day decision/exception volume rollup (UTC), newest first."""
     return get_ledger().daily(days=max(1, min(int(days), 90)))
+
+
+@app.get("/api/v1/streaming/health", tags=["streaming"])
+def streaming_health() -> dict:
+    """Layer 1 streaming store health: backend, observations, window state."""
+    h = get_velocity().health()
+    return {"layer": "streaming-velocity", "read_contract": "strictly-past", **h}
+
+
+@app.get("/api/v1/streaming/snapshot", tags=["streaming"])
+def streaming_snapshot(entity: str = "cust", entity_id: str = "") -> dict:
+    """Per-key rolling-window + cumulative-prior view for an entity."""
+    if not entity_id:
+        return {"error": "entity_id is required"}
+    try:
+        return get_velocity().snapshot(entity, entity_id)
+    except ValueError as exc:  # unknown entity -> 422-style message
+        return {"error": str(exc)}
 
 
 def _config() -> dict:

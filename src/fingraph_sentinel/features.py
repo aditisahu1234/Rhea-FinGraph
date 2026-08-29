@@ -13,6 +13,11 @@ import math
 
 import polars as pl
 
+from fingraph_sentinel.streaming import (  # noqa: E402 - streamed feature names
+    prior_feature_names,
+    velocity_feature_names,
+)
+
 # Final numeric feature vector consumed by the baseline model.
 FEATURE_COLUMNS: list[str] = [
     # static / calendar
@@ -62,6 +67,16 @@ ONLINE_FEATURE_COLUMNS: list[str] = [
     "merch_fraud_rate_prior",
     "mcc_freq_share",
 ]
+
+# Layer 1 enriched online feature set: the static/calendar ONLINE columns plus
+# real-time streaming velocity and cumulative causal priors served by the
+# streaming store. A serving model trained on this set consumes real-time
+# velocity through the Layer 1 store instead of leaving it NaN.
+ONLINE_VELOCITY_FEATURE_COLUMNS: list[str] = (
+    ONLINE_FEATURE_COLUMNS
+    + velocity_feature_names()
+    + prior_feature_names()
+)
 
 
 def _static_and_calendar(lf: pl.LazyFrame) -> pl.LazyFrame:

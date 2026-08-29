@@ -19,11 +19,18 @@ MODEL_DIR = Path("artifacts/models/baseline-online-xgb")
 HELIX_REPORT = MODEL_DIR / "helix_report.json"
 
 
-def event_feature_dict(event: PaymentEvent, model_dir: Path = MODEL_DIR) -> dict[str, float | None]:
+def event_feature_dict(
+    event: PaymentEvent,
+    model_dir: Path = MODEL_DIR,
+    velocity: dict[str, float] | None = None,
+) -> dict[str, float | None]:
     """Materialise the online feature dict for one PaymentEvent.
 
     Uses the same priors and calendar logic as the trainer so the served
-    features match what the model was validated on.
+    features match what the model was validated on. ``velocity`` (Layer 1
+    streaming values, strictly-past) overrides the NaN behavioural placeholders
+    for any velocity column the served model actually consumes; columns outside
+    the model's feature set are ignored, so a legacy model is unaffected.
     """
     cfg = json.loads((model_dir / "model_config.json").read_text())
     feature_columns = cfg["feature_columns"]
@@ -61,6 +68,11 @@ def event_feature_dict(event: PaymentEvent, model_dir: Path = MODEL_DIR) -> dict
         "merch_fraud_rate_prior": float(m_rate.get(merchant_key, default_rate)),
         "mcc_freq_share": float(mcc_share.get(mcc_key, 0.0)),
     }
+    # Layer 1: fill the strictly-past velocity/prior placeholders the model asks for.
+    if velocity:
+        for name in feature_columns:
+            if name in velocity and values.get(name) is None:
+                values[name] = velocity[name]
     # only the serving (online) feature columns leave the bridge
     return {name: values.get(name) for name in feature_columns}
 

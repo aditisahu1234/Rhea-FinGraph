@@ -109,9 +109,41 @@ npm run dev                     # Next.js on :3001
   (Layer 4) plus rule-based context reasons. Fails **safe** (manual review) if
   the model errors — never fails open.
 - `GET  /api/v1/helix/drift` — per-feature drift + retrain trigger (Layer 5)
+- `GET  /api/v1/streaming/health` — streaming store health (Layer 1)
+- `GET  /api/v1/streaming/snapshot?entity=&entity_id=` — per-key velocity view
+  (Layer 1)
 
 The dashboard polls status + drift every 10s, lets you type a transaction and
 watch the gauge, SHAP reason bars, and Helix culprit tags update live.
+
+## Layer 1 (streaming velocity)
+
+Real-time rolling velocity + cumulative-prior features computed **strictly in
+the past** — the event being scored is read from the store *before* it is
+written, so it never counts toward its own risk (same rule as the offline
+trainer's chronological splits).
+
+- **Windows.** `1h / 24h / 7d` counts, amounts, and distinct counterparties per
+  customer, card, merchant, and device; plus cumulative priors
+  (counts, amount mean, time since previous event) fed back from the stream.
+- **Backends.** Durable Redis (sliding windows via sorted sets + TTL) when
+  `settings.redis_url` is reachable; in-memory fail-safe otherwise — swappable
+  behind one interface in `src/fingraph_sentinel/streaming.py`. `default()`
+  mirrors the Layer 6 ledger policy: the API never 500s because the store is
+  briefly down.
+- **Serving.** `POST /api/v1/transactions/score` computes the velocity vector
+  before scoring and commits the event after (read → score → observe), so the
+  streaming values overlaid onto the model features are honest. A model
+  *trained* on velocity is a later data/Kaggle step — this layer is plumbing +
+  observability, not an accuracy claim.
+- **Offline replay.** `materialize_streaming_features()` replays labeled events
+  chronologically into a polars frame so the trainer can learn velocity later.
+- **API + dashboard.** The **Streaming velocity** panel shows store health,
+  observations, window state, and a per-entity snapshot inspector.
+
+```bash
+make streaming-smoke       # score 3 events + print streaming health/snapshot
+```
 
 ## Layer 6 (compliance audit + observability)
 
