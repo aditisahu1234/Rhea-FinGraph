@@ -110,3 +110,10 @@ class AuditSummary(BaseModel):
     verified_records: int = 0
     store_healthy: bool = False
     metrics_test_locked: dict | None = None
+
+
+class FeedbackIn(BaseModel):
+    """Helix v2: one outcome against an audited decision."""
+
+    transaction_id: str = Field(min_length=1, max_length=128)
+    outcome: Literal["fraud", "legit"]

@@ -189,3 +189,11 @@ input:focus, select:focus { border-color: var(--accent); }
 .stream-row > span:first-child { width: 100px; color: var(--muted); }
 .stream-bars { flex: 1; background: rgba(157, 186, 225, 0.08); border-radius: 6px; height: 8px; overflow: hidden; }
 .stream-bar { display: block; height: 100%; background: linear-gradient(90deg, #4c8dff, #8b5cf6); border-radius: 6px; }
+
+/* ---- Helix v2 self-healing panel ---- */
+.stream-k { display: block; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 4px; }
+.stream-v { display: block; font-size: 1.25rem; font-weight: 600; color: var(--fg); }
+.stream-hot { color: #ff5c7a; }
+.stream-sub { font-size: 0.75rem; color: var(--muted); margin: 8px 0 0; }
+.heal-actions { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.heal-actions li { font-size: 0.76rem; color: var(--muted); background: rgba(157, 186, 225, 0.05); border-left: 2px solid #8b5cf6; padding: 5px 8px; border-radius: 4px; }

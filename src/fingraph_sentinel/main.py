@@ -4,6 +4,7 @@ from fastapi import FastAPI, status
 
 from fingraph_sentinel.audit import Ledger
 from fingraph_sentinel.config import get_settings
+from fingraph_sentinel.healing import HealingEngine
 from fingraph_sentinel.runtime import (
     boilerplate_reasons,
     event_feature_dict,
@@ -14,6 +15,7 @@ from fingraph_sentinel.schemas import (
     AuditRecord,
     AuditSummary,
     FeatureDrift,
+    FeedbackIn,
     HelixDriftReport,
     ModelStatus,
     PaymentEvent,
@@ -51,6 +53,18 @@ def get_velocity() -> VelocityFeatureService:
     return _velocity
 
 
+# Layer 5 v2 healing engine: failure memory + heal actions. Durable JSONL
+# under settings.healing_dir, so feedback survives restarts with no Docker.
+_healing: HealingEngine | None = None
+
+
+def get_healing() -> HealingEngine:
+    global _healing  # noqa: PLW0603 - lazy singleton so tests can reset it
+    if _healing is None:
+        _healing = HealingEngine(model_dir=MODEL_DIR, healing_dir=settings.healing_dir)
+    return _healing
+
+
 app = FastAPI(
     title=settings.project_name,
     version="0.4.0",
@@ -60,8 +74,8 @@ app = FastAPI(
     ),
 )
 
-# --- Startup seeding: populate audit + streaming stores so the dashboard ---
-# has data on first load instead of showing "no scored decisions yet".      ---
+# --- Startup seeding: populate audit + streaming + healing stores so the --
+# --- dashboard has data on first load instead of empty panels.          ----
 _SEED_EVENTS = [
     {"transaction_id": "seed-001", "event_time": "2026-08-23T10:15:00Z",
      "customer_id": "C-1001", "card_id": "K-2001", "merchant_id": "1334959",
@@ -80,16 +94,29 @@ _SEED_EVENTS = [
      "amount": "875.50", "device_id": "D-3001", "merchant_country": "US"},
 ]
 
+# Demo outcomes (clearly synthetic) so the healing panel starts with real
+# memory: 2 confirmed frauds at merchant 5411 that the model allowed
+# (missed fraud -> hot-list + tightened hold + retrain queue) and 1 legit.
+_SEED_FEEDBACK = [
+    {"transaction_id": "seed-002", "outcome": "fraud"},
+    {"transaction_id": "seed-005", "outcome": "fraud"},
+    {"transaction_id": "seed-001", "outcome": "legit"},
+]
+
 
 @app.on_event("startup")
 def _seed_on_startup() -> None:
-    """Score 5 sample events so the dashboard has audit + velocity data."""
+    """Score demo events + record demo outcomes so panels have data on boot."""
+    if not settings.demo_seed:
+        return
     from fastapi.testclient import TestClient  # noqa: PLC0415
 
     try:
         client = TestClient(app, raise_server_exceptions=False)
         for evt in _SEED_EVENTS:
             client.post("/api/v1/transactions/score", json=evt)
+        for fb in _SEED_FEEDBACK:
+            client.post("/api/v1/healing/feedback", json=fb)
     except Exception:  # noqa: BLE001 — seeding is best-effort
         pass
 
@@ -175,11 +202,42 @@ def score_transaction(event: PaymentEvent) -> RiskDecision:
             is_model_ready=True,
             processed_at=datetime.now(UTC).isoformat(),
         )
+        _apply_threshold_override(decision)  # Layer 5 healing: miss/false-hold
         _audit("decision.scored", event, decision)
         return decision
     finally:
         # Commit the event into the streaming store after read + scoring, always.
         get_velocity().observe(event)
+
+
+def _apply_threshold_override(decision: RiskDecision) -> None:
+    """Layer 5 healing: re-derive the decision band from a live override."""
+    over = get_healing().threshold_overrides()
+    hold = over.get("hold")
+    if hold is None:
+        return
+    try:
+        base = _config()["thresholds"]
+        review = float(over.get("review", base["review"]))
+        p = float(decision.fraud_probability)
+        decision.action = (  # type: ignore[assignment]
+            "hold" if p >= float(hold) else "review" if p >= review else "allow"
+        )
+    except Exception:  # noqa: BLE001 - override must never break scoring
+        return
+
+
+def _find_audited_decision(transaction_id: str) -> dict | None:
+    """Look up one audited decision payload by transaction id (Layer 6)."""
+    try:
+        records = get_ledger().store.scan()
+    except Exception:  # noqa: BLE001 - fail-safe lookup
+        return None
+    for rec in records:
+        payload = rec.get("payload") or {}
+        if payload.get("transaction_id") == transaction_id:
+            return payload
+    return None
 
 
 def _audit(event_type: str, event: PaymentEvent, decision: RiskDecision) -> None:
@@ -241,6 +299,52 @@ def helix_drift() -> HelixDriftReport:
         reasons=list(dict.fromkeys(reasons)),
         features=list(features.values()),
     )
+
+
+@app.post("/api/v1/healing/feedback", tags=["healing"])
+def healing_feedback(body: FeedbackIn) -> dict:
+    """Helix v2: record an outcome (fraud/legit) against an audited decision.
+
+    The decision must exist in the Layer 6 ledger — feedback always references
+    a real, audited decision; the ledger chain itself is never modified.
+    """
+    decision = _find_audited_decision(body.transaction_id)
+    if decision is None:
+        return {
+            "ok": False,
+            "error": f"no audited decision for transaction '{body.transaction_id}'",
+        }
+    ep = get_healing().record_feedback(body.transaction_id, body.outcome, decision)
+    return {"ok": True, "episode": {
+        "transaction_id": ep.transaction_id,
+        "outcome": ep.outcome,
+        "action": ep.action,
+        "fail_type": ep.fail_type,
+        "model_version": ep.model_version,
+    }}
+
+
+@app.get("/api/v1/healing/memory", tags=["healing"])
+def healing_memory() -> dict:
+    """Helix v2: what the system remembers — episodes, failures, hot-lists."""
+    eng = get_healing()
+    return {
+        "stats": eng.memory.stats(),
+        "merchant_rollup": eng.memory.merchant_rollup(),
+        "hot_merchants": eng.memory.hot_merchants(),
+    }
+
+
+@app.get("/api/v1/healing/status", tags=["healing"])
+def healing_status() -> dict:
+    """Helix v2: full healing state — memory, drift, overrides, retrain queue."""
+    return get_healing().stats()
+
+
+@app.post("/api/v1/healing/heal", tags=["healing"])
+def healing_heal() -> dict:
+    """Helix v2: run one healing cycle now (hot-list + overrides + queue)."""
+    return get_healing().heal()
 
 
 @app.get("/api/v1/meta", tags=["health"])

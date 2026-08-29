@@ -181,3 +181,63 @@ export function fetchStreamingSnapshot(
     `/api/v1/streaming/snapshot?entity=${encodeURIComponent(entity)}&entity_id=${encodeURIComponent(entityId)}`
   );
 }
+
+// ---- Layer 5 v2: Helix self-healing memory -----------------------------
+
+export interface HealingMemoryStats {
+  episodes: number;
+  failures: number;
+  missed_fraud: number;
+  false_hold: number;
+  miss_rate: number;
+  false_hold_rate: number;
+  hot_merchants: number;
+  durable: boolean;
+  durable_file: string;
+  recent: Record<string, unknown>[];
+}
+
+export interface HealingMemory {
+  stats: HealingMemoryStats;
+  merchant_rollup: Record<string, Record<string, unknown>>;
+  hot_merchants: Record<string, unknown>[];
+}
+
+export interface HealingStatus {
+  memory: HealingMemoryStats;
+  drift: { trigger: string; score: number | null } | null;
+  threshold_overrides: Record<string, number>;
+  retrain_queue_len: number;
+  last_retrain_request: Record<string, unknown> | null;
+  hot_merchants: Record<string, unknown>[];
+  heal_report_exists: boolean;
+}
+
+export function fetchHealingMemory(): Promise<HealingMemory> {
+  return getJSON<HealingMemory>("/api/v1/healing/memory");
+}
+
+export function fetchHealingStatus(): Promise<HealingStatus> {
+  return getJSON<HealingStatus>("/api/v1/healing/status");
+}
+
+export async function runHealingCycle(): Promise<Record<string, unknown>> {
+  const res = await fetch(`${API_BASE}/api/v1/healing/heal`, {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error(`heal -> ${res.status}`);
+  return (await res.json()) as Record<string, unknown>;
+}
+
+export async function sendFeedback(
+  transactionId: string,
+  outcome: "fraud" | "legit"
+): Promise<Record<string, unknown>> {
+  const res = await fetch(`${API_BASE}/api/v1/healing/feedback`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ transaction_id: transactionId, outcome }),
+  });
+  if (!res.ok) throw new Error(`feedback -> ${res.status}`);
+  return (await res.json()) as Record<string, unknown>;
+}

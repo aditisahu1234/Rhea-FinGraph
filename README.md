@@ -86,6 +86,19 @@ make train-baseline         # full chronological train/validation/test run
 make helix            # per-feature drift report (train vs val/test)
 ```
 
+**Helix v2 — self-healing memory** (see `docs/HELIX_MEMORY.md` for the full
+design + honest boundaries): the drift monitor says *retrain*; failure memory
+says *what went wrong*. Every confirmed outcome (chargeback fraud / cleared
+legit) is recorded against the audited decision, and a healing cycle turns
+that memory into actions — merchant hot-lists, threshold overrides and a
+durable retrain queue:
+
+```bash
+make helix-heal            # run one healing cycle (writes heal_report.json)
+make helix-train-repair    # capped CPU repair-train on remembered failures
+make helix-healing-smoke   # score + feedback + heal, end to end
+```
+
 ## Layer 0 (API gateway + dashboard)
 
 A live vertical slice serving the real model with SHAP explanations and Helix
@@ -109,6 +122,11 @@ npm run dev                     # Next.js on :3001
   (Layer 4) plus rule-based context reasons. Fails **safe** (manual review) if
   the model errors — never fails open.
 - `GET  /api/v1/helix/drift` — per-feature drift + retrain trigger (Layer 5)
+- `GET  /api/v1/healing/status` — Helix v2 state: memory, overrides, retrain queue
+- `GET  /api/v1/healing/memory` — remembered episodes, failures, hot merchants
+- `POST /api/v1/healing/feedback` — record an outcome (fraud/legit) against an
+  audited decision
+- `POST /api/v1/healing/heal` — run one healing cycle now
 - `GET  /api/v1/streaming/health` — streaming store health (Layer 1)
 - `GET  /api/v1/streaming/snapshot?entity=&entity_id=` — per-key velocity view
   (Layer 1)

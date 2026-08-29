@@ -25,14 +25,16 @@ import Scorer from "./components/Scorer";
 import DriftPanel from "./components/DriftPanel";
 import AuditPanel from "./components/AuditPanel";
 import StreamingPanel from "./components/StreamingPanel";
+import HealingPanel from "./components/HealingPanel";
 import MetricsStrip from "./components/MetricsStrip";
 
 const layers = [
+  ["0 · Live scoring", "score every event · explain + audit · never executes"],
   ["1 · Streaming velocity", "rolling 1h/24h/7d · strictly-past · Redis/in-mem"],
   ["2 · Graph store", "Neo4j · 24.39M edges · 30 snapshots"],
   ["3 · Temporal GNN", "trained on Kaggle T4 · 46K params"],
   ["4 · Ensemble risk", "XGBoost + AE + SHAP/LIME explainability"],
-  ["5 · Helix memory", "per-feature drift + retrain trigger"],
+  ["5 · Helix memory", "drift + failure memory + auto-retrain queue"],
   ["6 · Audit ledger", "tamper-evident decisions · hash-chained"],
 ];
 
@@ -117,6 +119,10 @@ export default function Home() {
 
       <section className="panel">
         <StreamingPanel />
+      </section>
+
+      <section className="panel">
+        <HealingPanel />
       </section>
 
       <section className="panel">

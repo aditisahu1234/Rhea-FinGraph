@@ -159,3 +159,12 @@ helix-report:
 	.venv/bin/python -m fingraph_sentinel.helix \
 		--max-train-rows 50000 --max-eval-rows 30000 \
 		--out-json artifacts/models/baseline-online-xgb/helix_report.json
+
+helix-heal:
+	OMP_NUM_THREADS=1 .venv/bin/python -m fingraph_sentinel.healing heal --model-dir artifacts/models/baseline-online-xgb
+
+helix-train-repair:
+	OMP_NUM_THREADS=1 .venv/bin/python -m fingraph_sentinel.healing train-repair --model-dir artifacts/models/baseline-online-xgb --max-rows 5000
+
+helix-healing-smoke:
+	OMP_NUM_THREADS=1 .venv/bin/python -c "from fastapi.testclient import TestClient; import fingraph_sentinel.main as m; c = TestClient(m.app); r = c.post('/api/v1/transactions/score', json={'transaction_id': 'smoke-heal-1', 'event_time': '2026-08-23T10:00:00Z', 'customer_id': 'c1', 'card_id': 'card1', 'merchant_id': '5411', 'amount': '399.00'}); print('scored :', r.json()['action']); print('feedback:', c.post('/api/v1/healing/feedback', json={'transaction_id': 'smoke-heal-1', 'outcome': 'fraud'}).json()); print('memory :', c.get('/api/v1/healing/memory').json()['stats']); print('report :', c.post('/api/v1/healing/heal').json()['actions'])"
