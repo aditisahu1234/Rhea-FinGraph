@@ -150,9 +150,12 @@ api-server:
 		fingraph_sentinel.main:app --host 127.0.0.1 --port 8000
 
 audit-smoke:
-	# Layer 6: score a few events and verify the tamper-evident audit chain
 	OMP_NUM_THREADS=1 .venv/bin/python -c "from fastapi.testclient import TestClient; import fingraph_sentinel.main as m; c = TestClient(m.app); [c.post('/api/v1/transactions/score', json={'transaction_id': f'tx-audit-{i}', 'event_time': '2020-01-15T03:30:00Z', 'customer_id': 'c1', 'card_id': 'card1', 'merchant_id': '1334959', 'amount': '997.00'}) for i in range(3)]; print('health :', c.get('/api/v1/audit/health').json()); print('summary:', c.get('/api/v1/audit/summary').json()); print('verify :', c.get('/api/v1/audit/verify').json())"
 
 streaming-smoke:
-	# Layer 1: score 3 events, then inspect the strictly-past velocity store
 	OMP_NUM_THREADS=1 .venv/bin/python -c "from fastapi.testclient import TestClient; import fingraph_sentinel.main as m; c = TestClient(m.app); [c.post('/api/v1/transactions/score', json={'transaction_id': f'tx-vel-{i}', 'event_time': '2020-01-15T03:30:00Z', 'customer_id': 'c1', 'card_id': 'card1', 'merchant_id': '1334959', 'amount': '997.00'}) for i in range(3)]; print('health  :', c.get('/api/v1/streaming/health').json()); print('snapshot:', c.get('/api/v1/streaming/snapshot', params={'entity': 'cust', 'entity_id': 'c1'}).json())"
+
+helix-report:
+	.venv/bin/python -m fingraph_sentinel.helix \
+		--max-train-rows 50000 --max-eval-rows 30000 \
+		--out-json artifacts/models/baseline-online-xgb/helix_report.json

@@ -60,6 +60,39 @@ app = FastAPI(
     ),
 )
 
+# --- Startup seeding: populate audit + streaming stores so the dashboard ---
+# has data on first load instead of showing "no scored decisions yet".      ---
+_SEED_EVENTS = [
+    {"transaction_id": "seed-001", "event_time": "2026-08-23T10:15:00Z",
+     "customer_id": "C-1001", "card_id": "K-2001", "merchant_id": "1334959",
+     "amount": "49.99", "device_id": "D-3001", "merchant_country": "IN"},
+    {"transaction_id": "seed-002", "event_time": "2026-08-23T10:16:30Z",
+     "customer_id": "C-1001", "card_id": "K-2001", "merchant_id": "5411",
+     "amount": "299.00", "device_id": "D-3001", "merchant_country": "US"},
+    {"transaction_id": "seed-003", "event_time": "2026-08-23T10:17:45Z",
+     "customer_id": "C-1002", "card_id": "K-2002", "merchant_id": "5999",
+     "amount": "1250.00", "device_id": "D-3002", "merchant_country": "GB"},
+    {"transaction_id": "seed-004", "event_time": "2026-08-23T10:18:20Z",
+     "customer_id": "C-1003", "card_id": "K-2003", "merchant_id": "7299",
+     "amount": "12.50", "device_id": "D-3003", "merchant_country": "IN"},
+    {"transaction_id": "seed-005", "event_time": "2026-08-23T10:19:00Z",
+     "customer_id": "C-1001", "card_id": "K-2001", "merchant_id": "5411",
+     "amount": "875.50", "device_id": "D-3001", "merchant_country": "US"},
+]
+
+
+@app.on_event("startup")
+def _seed_on_startup() -> None:
+    """Score 5 sample events so the dashboard has audit + velocity data."""
+    from fastapi.testclient import TestClient  # noqa: PLC0415
+
+    try:
+        client = TestClient(app, raise_server_exceptions=False)
+        for evt in _SEED_EVENTS:
+            client.post("/api/v1/transactions/score", json=evt)
+    except Exception:  # noqa: BLE001 — seeding is best-effort
+        pass
+
 
 def _model_ready() -> bool:
     return (MODEL_DIR / "model_config.json").exists()
