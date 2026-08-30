@@ -159,6 +159,58 @@ def model_status() -> ModelStatus:
 # ---- Layer 2: graph pipeline status + Neo4j connectivity -----------------
 
 
+# Layer 2 top-fraud-merchant rollup: one vectorized pass over the Helix failure
+# memory per process (mtime-keyed), so the dashboard poll never rescans the
+# 338 MB / 800K-episode JSONL. Real confirmed-fraud merchants, not a promise.
+_TOP_MERCHANTS_CACHE: dict[str, tuple[int, list[dict]]] = {}
+
+
+def _top_fraud_merchants(limit: int = 10) -> list[dict]:
+    """Top merchants by confirmed-fraud failures from failure_memory.jsonl."""
+    mem_path = Path(settings.healing_dir) / "failure_memory.jsonl"
+    if not mem_path.exists():
+        return []
+    try:
+        key = str(mem_path)
+        mtime = mem_path.stat().st_mtime_ns
+        cached = _TOP_MERCHANTS_CACHE.get(key)
+        if cached is not None and cached[0] == mtime:
+            return cached[1]
+        import polars as pl  # noqa: PLC0415
+
+        rows = (
+            pl.scan_ndjson(key)
+            .select(
+                pl.col("event").struct.field("merchant_id").alias("mid"),
+                pl.col("fail_type"),
+                pl.col("outcome"),
+            )
+            .group_by("mid")
+            .agg(
+                [
+                    pl.len().alias("txns"),
+                    pl.col("fail_type").is_not_null().sum().alias("failures"),
+                    (pl.col("fail_type") == "missed_fraud")
+                    .sum()
+                    .alias("missed_fraud"),
+                    (pl.col("outcome") == "fraud").sum().alias("confirmed_fraud"),
+                ]
+            )
+            .filter(pl.col("mid").is_not_null())
+            .sort("failures", descending=True)
+            .head(limit)
+            .collect()
+            .to_dicts()
+        )
+        result: list[dict] = [
+            {"merchant_id": r.pop("mid", "") or "", **r} for r in rows
+        ]
+        _TOP_MERCHANTS_CACHE[key] = (mtime, result)
+        return result
+    except Exception:  # noqa: BLE001 - any rollup failure degrades to no table
+        return []
+
+
 def _best_graph_meta() -> tuple[dict | None, Path]:
     """Best local graph-snapshot meta.json (prefer the full-data Kaggle run)."""
 
@@ -236,6 +288,14 @@ def graph_status() -> GraphStatus:
                 for s in snapshots
             ],
         })
+        # Real confirmed-fraud merchants from the Helix failure memory
+        # (800K val-slice episodes). Provenance: failure-memory rollup, NOT
+        # graph-node fraud counts (per-edge snapshots live on Kaggle).
+        top = _top_fraud_merchants()
+        pipeline["top_merchants"] = top
+        pipeline["top_merchants_source"] = (
+            "helix failure memory rollup (failure_memory.jsonl)"
+        )
         import json  # noqa: PLC0415
 
         gnn_cfg = meta_path.parent / "gnn_config.json"

@@ -108,6 +108,37 @@ export default function GraphPanel() {
             </div>
           )}
 
+          {p && Array.isArray(p.top_merchants) && p.top_merchants.length > 0 && (
+            <div className="top-m">
+              <div className="trend-label">
+                <span>hottest confirmed-fraud merchants</span>
+                <span className="muted">{p.top_merchants_source}</span>
+              </div>
+              <div className="audit-row audit-head">
+                <span>merchant_id</span>
+                <span>episodes</span>
+                <span>confirmed fraud</span>
+                <span>missed fraud</span>
+                <span className="mono">share</span>
+              </div>
+              {p.top_merchants.slice(0, 8).map((m) => (
+                <div className="audit-row" key={m.merchant_id}>
+                  <span className="mono" title={m.merchant_id}>
+                    {m.merchant_id}
+                  </span>
+                  <span>{m.txns.toLocaleString()}</span>
+                  <span>{m.confirmed_fraud.toLocaleString()}</span>
+                  <span>{m.missed_fraud.toLocaleString()}</span>
+                  <span className="mono">
+                    {m.txns > 0
+                      ? `${((m.confirmed_fraud / m.txns) * 100).toFixed(2)}%`
+                      : "—"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
           {graph.gnn && (
             <div className="gnn-row">
               <div className="gnn-head">

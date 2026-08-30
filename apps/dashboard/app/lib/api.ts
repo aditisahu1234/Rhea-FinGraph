@@ -64,6 +64,14 @@ export interface GraphSnapshotRow {
   n_fraud: number | null;
 }
 
+export interface TopMerchantRow {
+  merchant_id: string;
+  txns: number;
+  failures: number;
+  missed_fraud: number;
+  confirmed_fraud: number;
+}
+
 export interface GraphPipeline {
   source: string;
   n_customers: number | null;
@@ -75,6 +83,8 @@ export interface GraphPipeline {
   total_edges: number | null;
   total_fraud_edges: number | null;
   snapshots: GraphSnapshotRow[];
+  top_merchants: TopMerchantRow[];
+  top_merchants_source: string | null;
 }
 
 export interface GnnSummary {

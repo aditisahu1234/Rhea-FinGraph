@@ -116,6 +116,9 @@ def test_graph_status_shape_and_neo4j_flag() -> None:
     assert body["neo4j"]["reachable"] in (True, False)  # honest either way
     assert "pipeline" in body
     assert "snapshots" in body["pipeline"]
+    assert "top_merchants" in body["pipeline"]
+    for row in body["pipeline"]["top_merchants"]:
+        assert "merchant_id" in row and "failures" in row
     # pipeline totals must be numbers when a meta.json exists locally
     total = body["pipeline"].get("total_edges")
     assert total is None or total >= 0

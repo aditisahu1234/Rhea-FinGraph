@@ -214,6 +214,8 @@ input:focus, select:focus { border-color: var(--accent); }
 .gnn-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: 0.78rem; margin-bottom: 8px; }
 .gnn-metrics { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; font-size: 0.8rem; }
 .gnn-metrics b { font-variant-numeric: tabular-nums; }
+.top-m { margin: 2px 0 14px; }
+.top-m .audit-row { grid-template-columns: 1.8fr 0.8fr 1fr 1fr 0.7fr; }
 .neo4j-card { display: flex; flex-direction: column; gap: 4px; border-radius: 10px; padding: 12px; font-size: 0.78rem; }
 .neo4j-card.ok { background: rgba(45, 212, 191, 0.08); border: 1px solid var(--pos); }
 .neo4j-card.off { background: rgba(244, 63, 94, 0.06); border: 1px dashed var(--line); }
