@@ -26,6 +26,7 @@ import DriftPanel from "./components/DriftPanel";
 import AuditPanel from "./components/AuditPanel";
 import StreamingPanel from "./components/StreamingPanel";
 import HealingPanel from "./components/HealingPanel";
+import GraphPanel from "./components/GraphPanel";
 import MetricsStrip from "./components/MetricsStrip";
 
 const layers = [
@@ -119,6 +120,10 @@ export default function Home() {
 
       <section className="panel">
         <StreamingPanel />
+      </section>
+
+      <section className="panel">
+        <GraphPanel />
       </section>
 
       <section className="panel">

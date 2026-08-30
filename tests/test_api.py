@@ -4,6 +4,8 @@ Monkeypatches the new seams (_model_ready, score_event, load_helix_drift) so
 these tests are deterministic and do not require a trained model on disk.
 """
 
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 
 from fingraph_sentinel.main import app
@@ -102,3 +104,31 @@ def test_helix_drift_empty_default(monkeypatch) -> None:
     monkeypatch.setattr("fingraph_sentinel.main.load_helix_drift", lambda: None)
     body = client.get("/api/v1/helix/drift").json()
     assert body["trigger"] == "NO"
+
+
+# ---- Layer 2 graph status -------------------------------------------------
+
+
+def test_graph_status_shape_and_neo4j_flag() -> None:
+    body = client.get("/api/v1/graph/status").json()
+    assert "neo4j" in body
+    assert body["neo4j"]["url"].startswith("bolt://")
+    assert body["neo4j"]["reachable"] in (True, False)  # honest either way
+    assert "pipeline" in body
+    assert "snapshots" in body["pipeline"]
+    # pipeline totals must be numbers when a meta.json exists locally
+    total = body["pipeline"].get("total_edges")
+    assert total is None or total >= 0
+    # gnn summary is optional but shape-consistent when present
+    gnn = body.get("gnn")
+    assert gnn is None or "architecture" in gnn
+
+
+def test_graph_status_no_pipeline_when_no_meta(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "fingraph_sentinel.main._best_graph_meta", lambda: (None, Path(""))
+    )
+    body = client.get("/api/v1/graph/status").json()
+    assert body["pipeline"]["source"] == "none"
+    assert body["pipeline"].get("n_merchants") is None
+    assert body["gnn"] is None

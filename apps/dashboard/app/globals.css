@@ -197,3 +197,29 @@ input:focus, select:focus { border-color: var(--accent); }
 .stream-sub { font-size: 0.75rem; color: var(--muted); margin: 8px 0 0; }
 .heal-actions { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .heal-actions li { font-size: 0.76rem; color: var(--muted); background: rgba(157, 186, 225, 0.05); border-left: 2px solid #8b5cf6; padding: 5px 8px; border-radius: 4px; }
+
+/* ---- Layer 2 graph store panel ---- */
+.graph-stats { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; margin: 4px 0 16px; }
+@media (max-width: 840px) { .graph-stats { grid-template-columns: repeat(3, 1fr); } }
+.graph-stats .stat { background: rgba(157, 186, 225, 0.06); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.graph-stats .stat-v { display: block; font-size: 1.35rem; font-weight: 800; }
+.graph-stats .stat-k { color: var(--muted); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em; }
+.graph-trend { margin: 4px 0 14px; }
+.trend-label { display: flex; justify-content: space-between; font-size: 0.72rem; color: var(--muted); margin-bottom: 6px; }
+.trend-bars { display: flex; align-items: flex-end; gap: 3px; height: 84px; border-bottom: 1px solid var(--line); }
+.trend-col { flex: 1; display: flex; align-items: flex-end; gap: 2px; height: 100%; min-width: 4px; }
+.trend-edge { flex: 1; background: linear-gradient(180deg, #4c8dff, #1e3a8a); border-radius: 2px 2px 0 0; min-height: 1px; }
+.trend-fraud { flex: 1; background: #ff8a5c; border-radius: 2px 2px 0 0; min-height: 1px; }
+.gnn-row { background: rgba(139, 92, 246, 0.07); border: 1px solid rgba(139, 92, 246, 0.25); border-radius: 10px; padding: 12px; margin: 2px 0 14px; }
+.gnn-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: 0.78rem; margin-bottom: 8px; }
+.gnn-metrics { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; font-size: 0.8rem; }
+.gnn-metrics b { font-variant-numeric: tabular-nums; }
+.neo4j-card { display: flex; flex-direction: column; gap: 4px; border-radius: 10px; padding: 12px; font-size: 0.78rem; }
+.neo4j-card.ok { background: rgba(45, 212, 191, 0.08); border: 1px solid var(--pos); }
+.neo4j-card.off { background: rgba(244, 63, 94, 0.06); border: 1px dashed var(--line); }
+.neo4j-title { font-weight: 700; font-size: 0.8rem; }
+
+/* ---- Helix repair promotion gate card ---- */
+.gate-card { display: flex; flex-direction: column; gap: 4px; margin-top: 12px; border-radius: 10px; padding: 12px; font-size: 0.78rem; background: rgba(139, 92, 246, 0.07); border: 1px dashed rgba(139, 92, 246, 0.4); }
+.gate-title { font-size: 0.8rem; }
+.gate-title b { color: var(--warn); }

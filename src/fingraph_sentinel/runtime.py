@@ -18,6 +18,50 @@ from fingraph_sentinel.schemas import PaymentEvent
 MODEL_DIR = Path("artifacts/models/baseline-online-xgb")
 HELIX_REPORT = MODEL_DIR / "helix_report.json"
 
+# In-process prior cache (per model dir): the three JSON priors are read once
+# per model snapshot and reused across every event. Keyed on the files'
+# combined mtimes so a promoted model transparently rebuilds the cache.
+_PRIOR_CACHE: dict[str, dict] = {}
+
+
+def _serving_config(model_dir: Path) -> dict:
+    """Cached model_config.json for a model dir (mtime-keyed)."""
+    p = model_dir / "model_config.json"
+    mtime = p.stat().st_mtime_ns if p.exists() else 0
+    key = f"{model_dir}::config"
+    cached = _PRIOR_CACHE.get(key)
+    if cached is not None and cached["_mtime"] == mtime:
+        return cached["cfg"]
+    cfg = json.loads(p.read_text()) if p.exists() else {}
+    _PRIOR_CACHE[key] = {"_mtime": mtime, "cfg": cfg}
+    return cfg
+
+
+def _prior_files(model_dir: Path) -> dict:
+    """Cached {merchant_fraud_priors, merchant_share, mcc_share} normalized."""
+    names = ("merchant_fraud_priors.json", "merchant_share.json",
+             "mcc_share.json")
+    stamp = []
+    for name in names:
+        p = model_dir / name
+        stamp.append(p.stat().st_mtime_ns if p.exists() else 0)
+    key = str(model_dir)
+    cached = _PRIOR_CACHE.get(key)
+    if cached is not None and cached["_mtime"] == stamp:
+        return cached
+    out: dict = {"_mtime": stamp}
+    for name in names:
+        p = model_dir / name
+        if p.exists():
+            out[name] = _normalize_keys(json.loads(p.read_text()))
+    _PRIOR_CACHE[key] = out
+    return out
+
+
+def clear_prior_cache() -> None:
+    """Drop cached priors (tests / model promotion tooling)."""
+    _PRIOR_CACHE.clear()
+
 
 def event_feature_dict(
     event: PaymentEvent,
@@ -32,12 +76,12 @@ def event_feature_dict(
     for any velocity column the served model actually consumes; columns outside
     the model's feature set are ignored, so a legacy model is unaffected.
     """
-    cfg = json.loads((model_dir / "model_config.json").read_text())
+    cfg = _serving_config(model_dir)
     feature_columns = cfg["feature_columns"]
-
-    m_rate = _normalize_keys(json.loads((model_dir / "merchant_fraud_priors.json").read_text()))
-    m_share = _normalize_keys(json.loads((model_dir / "merchant_share.json").read_text()))
-    mcc_share = _normalize_keys(json.loads((model_dir / "mcc_share.json").read_text()))
+    priors = _prior_files(model_dir)
+    m_rate = priors["merchant_fraud_priors.json"]
+    m_share = priors["merchant_share.json"]
+    mcc_share = priors["mcc_share.json"]
 
     default_rate = float(m_rate.get("__default__", 0.001))
     merchant_key = str(event.merchant_id)
@@ -79,7 +123,7 @@ def event_feature_dict(
 
 def boilerplate_reasons(event: PaymentEvent, model_dir: Path = MODEL_DIR) -> list[dict]:
     """Explainable, rule-based context reasons (before SHAP)."""
-    m_rate = _normalize_keys(json.loads((model_dir / "merchant_fraud_priors.json").read_text()))
+    m_rate = _prior_files(model_dir)["merchant_fraud_priors.json"]
     default_rate = float(m_rate.get("__default__", 0.001)) * 100
     rate = float(m_rate.get(str(event.merchant_id), -1.0)) * 100
     reasons: list[dict] = []

@@ -190,6 +190,13 @@ class HealingEngine:
         drift = self.drift_trigger()
         over = self.threshold_overrides()
         queue = load_retrain_queue(self._queue_path())
+        gate: dict[str, Any] | None = None
+        gate_path = self.healing_dir / "gate_report.json"
+        if gate_path.exists():
+            try:
+                gate = json.loads(gate_path.read_text())
+            except Exception:  # noqa: BLE001 - corrupt report => no gate row
+                gate = {"verdict": "unreadable"}
         return {
             "memory": mem,
             "drift": drift,
@@ -198,6 +205,9 @@ class HealingEngine:
             "last_retrain_request": queue[-1] if queue else None,
             "hot_merchants": self.hot_merchants(),
             "heal_report_exists": self._report_path().exists(),
+            # Repair-model promotion gate (REPAIR_PROMOTION_GATE.md): last
+            # verdict from scripts/repair_gate_sim.py, if a run exists.
+            "gate_report": gate,
         }
 
     # ----- heal cycle ----------------------------------------------------

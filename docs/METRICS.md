@@ -44,6 +44,32 @@ clean all-around win. Two honest observations for the story:
 2. The gap is partly training-size (2.5M vs 14.6M rows). A full-data velocity
    run on the T4 is the next evidence step, not a promise it will beat 0.8937.
 
+### Backend comparison on the same capped velocity slice (2026-08-30)
+
+| Backend | Val ROC | Test ROC | Verdict |
+|---|---|---|---|
+| XGBoost (`baseline-online-v3`) | **0.8224** | **0.7646** | serving candidate (gate: not promoted yet) |
+| LightGBM (same 2.5M slice) | 0.3175 | 0.7373 | **rejected — val worse than random**; early-stopped at iter 2 with logloss ~8.0. The trainer's pos-weight/calibration path for lightgbm on this feature set does not hold; XGBoost stays the velocity backend. |
+
+Recorded from `make train-baseline-velocity` (xgb) and the lightgbm variant run.
+LightGBM's test ROC looks high only because its broken val calibration
+collapses to near-random ordering by design threshold fallback — the honest
+read is the val ROC.
+
+## Serving latency (Layer 0, 2026-08-30)
+
+Per-event scoring path was re-loading the 2.6 MB booster + rebuilding a SHAP
+TreeExplainer on EVERY event (~140 ms/event warm, >1 s cold). Now cached
+in-process (mtime-keyed; see `docs/LATENCY.md` for the full table):
+
+| Stage (full core path: velocity + features + predict + SHAP + observe) | mean | throughput |
+|---|---|---|
+| before fix (warm) | ~140 ms/event | ~7/s |
+| **after fix** | **0.466 ms/event** | **2,148/s** |
+
+Full HTTP round-trip adds ~1 ms (FastAPI + audit write) → realistic service
+ceiling ≈ 1.5 ms/event on the MacBook.
+
 ## Repair-model promotion gate sim (2026-08-29)
 
 Local end-to-end pass of the Helix v2 promotion loop

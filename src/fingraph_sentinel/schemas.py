@@ -80,6 +80,30 @@ class ModelStatus(BaseModel):
     metrics_validation: dict | None = None
 
 
+# ---- Layer 2: graph store (local snapshots + Neo4j) ---------------------
+
+
+class Neo4jStatus(BaseModel):
+    reachable: bool
+    detail: str
+    url: str
+
+
+class GraphStatus(BaseModel):
+    """Honest snapshot of the Layer-2 graph pipeline + Neo4j connectivity.
+
+    ``pipeline`` is always derived from the LOCAL graph-snapshot artifacts
+    (torch snapshots + meta.json from graph_snapshots), so the dashboard
+    renders real nodes/edges even when Neo4j is not running. ``neo4j`` reports
+    live reachability of the bolt endpoint — offline locally is the expected
+    state until the user runs ``make ingest-graph``.
+    """
+
+    neo4j: Neo4jStatus
+    pipeline: dict
+    gnn: dict | None = None
+
+
 # ---- Layer 6: compliance audit + observability --------------------------
 
 

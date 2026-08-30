@@ -78,6 +78,16 @@ model (see §3 for constructing one).
    (`promote-repair`) may automate the copy, but the *decision* stays manual
    and is recorded in the docs.
 
+> **Executable gate (real run, 2026-08-30):** `scripts/repair_gate_sim.py`
+> (`make repair-gate-sim`) runs this exact procedure end-to-end and writes
+> `artifacts/healing/gate_report.json` + locked slice ids
+> (`artifacts/healing/gate_L_ids.json`). Real verdict on record: memory =
+> validation rows `[3M, 3.8M)` (800K eps / 1,691 frauds), locked `L` = test
+> rows `[3M, 3.8M)` (800K rows / 1,160 frauds) — serving ROC 0.5107 /
+> top-5k 7 caught vs repair ROC 0.5989 / 52 caught → **`pass_with_caveat`**
+> (different feature spaces; confirm on a shared representation on the T4
+> before real promotion). Numbers also live in METRICS.md.
+
 ---
 
 ## 3. Constructing the locked held-out slice (no leakage)

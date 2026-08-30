@@ -148,6 +148,26 @@ export default function HealingPanel() {
         </div>
       )}
 
+      {status?.gate_report && (
+        <div className="gate-card">
+          <span className="gate-title">
+            repair promotion gate ·{" "}
+            <b>{status.gate_report.verdict.toUpperCase()}</b>
+          </span>
+          <span className="muted">
+            locked L:{" "}
+            {status.gate_report.slice
+              ? `${(status.gate_report.slice.rows ?? 0).toLocaleString()} rows / ${(status.gate_report.slice.frauds ?? 0).toLocaleString()} frauds`
+              : "—"}{" "}
+            · serving ROC {status.gate_report.serving?.roc_auc?.toFixed(4)} (
+            {status.gate_report.serving?.top5k_caught} top-5k) vs repair ROC{" "}
+            {status.gate_report.repair?.roc_auc?.toFixed(4)} (
+            {status.gate_report.repair?.top5k_caught} top-5k). Promotion only
+            after a T4 shared-representation confirm — docs/REPAIR_PROMOTION_GATE.md.
+          </span>
+        </div>
+      )}
+
       {actions.length > 0 && (
         <ul className="heal-actions">
           {actions.map((a, i) => (

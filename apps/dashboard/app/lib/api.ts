@@ -50,6 +50,54 @@ export interface ModelStatus {
   metrics_test_locked: Record<string, number> | null;
 }
 
+// ---- Layer 2: graph store ------------------------------------------------
+
+export interface Neo4jStatus {
+  reachable: boolean;
+  detail: string;
+  url: string;
+}
+
+export interface GraphSnapshotRow {
+  month_idx: number;
+  n_edges: number | null;
+  n_fraud: number | null;
+}
+
+export interface GraphPipeline {
+  source: string;
+  n_customers: number | null;
+  n_merchants: number | null;
+  n_cards: number | null;
+  n_snapshots: number | null;
+  month_range: [number, number] | null;
+  bucket_months: number | null;
+  total_edges: number | null;
+  total_fraud_edges: number | null;
+  snapshots: GraphSnapshotRow[];
+}
+
+export interface GnnSummary {
+  architecture: string | null;
+  params: number | null;
+  epochs: number | null;
+  fit_seconds: number | null;
+  device_used: string | null;
+  best_val_auc: number | null;
+  metrics_validation: Record<string, number> | null;
+  metrics_test_locked: Record<string, number> | null;
+}
+
+export interface GraphStatus {
+  neo4j: Neo4jStatus;
+  pipeline: GraphPipeline;
+  gnn: GnnSummary | null;
+}
+
+export function fetchGraphStatus(): Promise<GraphStatus> {
+  return getJSON<GraphStatus>("/api/v1/graph/status");
+}
+
 async function getJSON<T>(path: string): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, { cache: "no-store" });
   if (!res.ok) throw new Error(`GET ${path} -> ${res.status}`);
@@ -203,6 +251,13 @@ export interface HealingMemory {
   hot_merchants: Record<string, unknown>[];
 }
 
+export interface RepairGateReport {
+  verdict: string;
+  serving?: { roc_auc?: number; top5k_caught?: number };
+  repair?: { roc_auc?: number; top5k_caught?: number };
+  slice?: { rows?: number; frauds?: number };
+}
+
 export interface HealingStatus {
   memory: HealingMemoryStats;
   drift: { trigger: string; score: number | null } | null;
@@ -211,6 +266,7 @@ export interface HealingStatus {
   last_retrain_request: Record<string, unknown> | null;
   hot_merchants: Record<string, unknown>[];
   heal_report_exists: boolean;
+  gate_report: RepairGateReport | null;
 }
 
 export function fetchHealingMemory(): Promise<HealingMemory> {

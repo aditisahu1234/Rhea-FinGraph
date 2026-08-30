@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from pathlib import Path
 
 from fastapi import FastAPI, status
 
@@ -16,8 +17,10 @@ from fingraph_sentinel.schemas import (
     AuditSummary,
     FeatureDrift,
     FeedbackIn,
+    GraphStatus,
     HelixDriftReport,
     ModelStatus,
+    Neo4jStatus,
     PaymentEvent,
     RiskDecision,
     RiskReason,
@@ -150,6 +153,115 @@ def model_status() -> ModelStatus:
         thresholds=cfg.get("thresholds"),
         metrics_validation=cfg.get("metrics_validation"),
         metrics_test_locked=cfg.get("metrics_test_locked"),
+    )
+
+
+# ---- Layer 2: graph pipeline status + Neo4j connectivity -----------------
+
+
+def _best_graph_meta() -> tuple[dict | None, Path]:
+    """Best local graph-snapshot meta.json (prefer the full-data Kaggle run)."""
+
+    candidates = [
+        Path("artifacts/graph/gnn_kaggle/graph/meta.json"),
+        Path("artifacts/graph/snapshots-smoke/meta.json"),
+    ]
+    for p in candidates:
+        if p.exists():
+            import json  # noqa: PLC0415
+
+            try:
+                return json.loads(p.read_text()), p
+            except Exception:  # noqa: BLE001 - corrupt meta should not 500
+                return None, p
+    return None, Path("")
+
+
+def _neo4j_reachable() -> Neo4jStatus:
+    """Live bolt handshake against settings.neo4j_url (short timeout).
+
+    Offline is the expected local state until the user runs
+    ``make ingest-graph``; the check uses verify_connectivity() which fails
+    fast (connection refused) when no Neo4j server is listening.
+    """
+    try:  # noqa: PLW1101
+        from neo4j import GraphDatabase  # noqa: PLC0415
+    except Exception:  # noqa: BLE001 - driver not installed -> not reachable
+        return Neo4jStatus(reachable=False, detail="neo4j driver not installed",
+                           url=settings.neo4j_url)
+    driver = None
+    try:
+        driver = GraphDatabase.driver(
+            settings.neo4j_url,
+            auth=(settings.neo4j_username, settings.neo4j_password),
+            connection_timeout=2.0,
+        )
+        driver.verify_connectivity()
+        return Neo4jStatus(reachable=True,
+                           detail="bolt endpoint reachable",
+                           url=settings.neo4j_url)
+    except Exception as exc:  # noqa: BLE001 - any failure => offline, honest
+        return Neo4jStatus(reachable=False, detail=f"{type(exc).__name__}: {exc}",
+                           url=settings.neo4j_url)
+    finally:
+        if driver is not None:
+            try:
+                driver.close()
+            except Exception:  # noqa: BLE001 - best-effort close
+                pass
+
+
+@app.get("/api/v1/graph/status",
+         response_model=GraphStatus,
+         tags=["graph"])
+def graph_status() -> GraphStatus:
+    """Layer-2 graph store status: local snapshot pipeline + Neo4j reachability."""
+    meta, meta_path = _best_graph_meta()
+    pipeline: dict = {"source": "none" if meta is None else str(meta_path)}
+    gnn: dict | None = None
+    if meta is not None:
+        snapshots = meta.get("snapshots") or []
+        pipeline.update({
+            "n_customers": meta.get("n_customers"),
+            "n_merchants": meta.get("n_merchants"),
+            "n_cards": meta.get("n_cards"),
+            "n_snapshots": meta.get("n_months") or len(snapshots),
+            "month_range": [meta.get("month_min"), meta.get("month_max")],
+            "bucket_months": meta.get("bucket_months"),
+            "total_edges": sum(int(s.get("n_edges", 0)) for s in snapshots),
+            "total_fraud_edges": sum(int(s.get("n_fraud", 0)) for s in snapshots),
+            "snapshots": [
+                {"month_idx": s.get("month_idx"), "n_edges": s.get("n_edges"),
+                 "n_fraud": s.get("n_fraud")}
+                for s in snapshots
+            ],
+        })
+        import json  # noqa: PLC0415
+
+        gnn_cfg = meta_path.parent / "gnn_config.json"
+        if not gnn_cfg.exists():
+            gnn_cfg = (Path("artifacts/graph/gnn_kaggle/gnn/gnn_config.json")
+                       if (Path("artifacts/graph/gnn_kaggle/gnn/gnn_config.json")
+                           .exists()) else None)
+        if gnn_cfg is not None:
+            try:
+                c = json.loads(gnn_cfg.read_text())
+                gnn = {
+                    "architecture": c.get("architecture"),
+                    "params": c.get("params"),
+                    "epochs": c.get("epochs"),
+                    "fit_seconds": c.get("fit_seconds"),
+                    "device_used": c.get("device_used"),
+                    "best_val_auc": c.get("best_val_auc"),
+                    "metrics_validation": c.get("metrics_validation"),
+                    "metrics_test_locked": c.get("metrics_test_locked"),
+                }
+            except Exception:  # noqa: BLE001 - corrupt config => no GNN row
+                gnn = None
+    return GraphStatus(
+        neo4j=_neo4j_reachable(),
+        pipeline=pipeline,
+        gnn=gnn,
     )
 
 
@@ -419,10 +531,21 @@ def streaming_snapshot(entity: str = "cust", entity_id: str = "") -> dict:
         return {"error": str(exc)}
 
 
+_config_cache: dict[str, object] = {}
+
+
 def _config() -> dict:
+    """model_config.json, read once per file mtime (not per request)."""
     import json
 
-    return json.loads((MODEL_DIR / "model_config.json").read_text())
+    p = MODEL_DIR / "model_config.json"
+    mtime = p.stat().st_mtime_ns if p.exists() else 0
+    if _config_cache.get("_mtime") == mtime:
+        return _config_cache["cfg"]  # type: ignore[return-value]
+    cfg = json.loads(p.read_text()) if p.exists() else {}
+    _config_cache["_mtime"] = mtime
+    _config_cache["cfg"] = cfg
+    return cfg
 
 
 def _safe_review_decision(event: PaymentEvent) -> RiskDecision:
