@@ -26,6 +26,7 @@ from sklearn.metrics import average_precision_score, precision_recall_curve, roc
 from fingraph_sentinel.features import (
     FEATURE_COLUMNS,
     ONLINE_FEATURE_COLUMNS,
+    ONLINE_VELOCITY_FEATURE_COLUMNS,
     build_feature_frame,
     fit_frequency_shares,
     fit_merchant_priors,
@@ -40,11 +41,22 @@ def calibrate_probability(p: np.ndarray | float, scale: float) -> np.ndarray | f
     return p_arr / (scale * (1.0 - p_arr) + p_arr)
 
 
-def _load_featured(path: Path, max_rows: int | None) -> pl.DataFrame:
+def _load_featured(
+    path: Path,
+    max_rows: int | None,
+    velocity_dir: Path | None = None,
+) -> pl.DataFrame:
     lf = build_feature_frame(pl.scan_parquet(path))
     if max_rows is not None:
         lf = lf.head(max_rows)
-    print(f"[features] materialising {path.name} ...", flush=True)
+    if velocity_dir is not None:
+        # Layer 1: join the historical strictly-past velocity replay (one row
+        # per transaction, same id). Misses stay null (cold-start entities),
+        # which every supported backend treats natively.
+        vel = pl.scan_parquet(f"{velocity_dir}/*.parquet")
+        lf = lf.join(vel, on="transaction_id", how="left")
+    print(f"[features] materialising {path.name} "
+          f"(velocity={velocity_dir is not None}) ...", flush=True)
     return lf.collect()
 
 
@@ -260,8 +272,14 @@ def main() -> None:
     )
     parser.add_argument("--device", choices=["cpu", "cuda"], default="cpu")
     parser.add_argument(
-        "--feature-set", choices=["full", "online"], default="full",
-        help="online = only features computable at realtime scoring (cold-start safe).",
+        "--feature-set", choices=["full", "online", "velocity"], default="full",
+        help="online = features computable at realtime scoring; velocity = "
+        "online + strictly-past streaming features from the Layer 1 replay.",
+    )
+    parser.add_argument(
+        "--velocity-dir", type=Path, default=None,
+        help="Velocity replay dir (artifacts/data/velocity/<split>) joined by "
+        "transaction_id; required when --feature-set velocity.",
     )
     parser.add_argument("--max-train-rows", type=int, default=None, help="Smoke-test cap.")
     parser.add_argument("--max-val-rows", type=int, default=None)
@@ -272,11 +290,25 @@ def main() -> None:
 
     started = time.time()
     args.out.mkdir(parents=True, exist_ok=True)
-    columns = ONLINE_FEATURE_COLUMNS if args.feature_set == "online" else FEATURE_COLUMNS
+    if args.feature_set == "velocity" and args.velocity_dir is None:
+        raise SystemExit("--feature-set velocity requires --velocity-dir <split replay dir>")
+    if args.feature_set == "velocity":
+        columns = ONLINE_VELOCITY_FEATURE_COLUMNS
+    elif args.feature_set == "online":
+        columns = ONLINE_FEATURE_COLUMNS
+    else:
+        columns = FEATURE_COLUMNS
 
-    train_raw = _load_featured(args.train, args.max_train_rows)
-    val_raw = _load_featured(args.val, args.max_val_rows)
-    test_raw = _load_featured(args.test, args.max_test_rows)
+    split_vel = (
+        {"train": args.velocity_dir / "train",
+         "validation": args.velocity_dir / "validation",
+         "test": args.velocity_dir / "test"}
+        if args.feature_set == "velocity"
+        else {}
+    )
+    train_raw = _load_featured(args.train, args.max_train_rows, split_vel.get("train"))
+    val_raw = _load_featured(args.val, args.max_val_rows, split_vel.get("validation"))
+    test_raw = _load_featured(args.test, args.max_test_rows, split_vel.get("test"))
     print(f"[priors] fitting on train period ({train_raw.height:,} rows)", flush=True)
 
     merchant_rates = fit_merchant_priors(train_raw)
@@ -339,7 +371,11 @@ def main() -> None:
     (args.out / "mcc_share.json").write_text(json.dumps(mcc_shares))
 
     config = {
-        "model_name": f"{args.backend}_{args.feature_set}_v2",
+        "model_name": (
+            f"{args.backend}_{args.feature_set}_v3"
+            if args.feature_set == "velocity"
+            else f"{args.backend}_{args.feature_set}_v2"
+        ),
         "backend": args.backend,
         "model_file": model_file,
         "device_used": args.device,

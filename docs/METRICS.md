@@ -10,9 +10,39 @@ noted; the numbers are honest *for each model's own split*.
 | Model | Val ROC | Test ROC | Test AP | Source |
 |---|---|---|---|---|
 | XGBoost serving baseline (`baseline-online-xgb`) | **0.8937** | **0.5967** | 0.0015 | `make train-baseline-online` |
+| Velocity model (`baseline-online-v3`, capped 2.5M-train) | 0.8224 | **0.7646** | 0.0038 | `make train-baseline-velocity` (capped) + full-set rescore |
 | Autoencoder anomaly detector | 0.8618 | 0.4591 | 0.0009 | `make train-ae` (smoke) |
 | 4-signal fusion stacker (xgb+lgbm+catboost+AE) | 0.8190 | 0.6266 | 0.0015 | `make fusion-smoke` (300K/120K/80K) |
 | **Temporal Heterogeneous GNN (full graph)** | 0.6272 | 0.4664 | 0.0015 | Kaggle T4, `artifacts/graph/gnn_kaggle/` |
+
+## Velocity model (2026-08-29)
+
+Layer-1 velocity features (strictly-past 1h/24h/7d counts, amounts, distinct
+merchants; cumulative priors) replayed chronologically through the production
+`VelocityStore` semantics.
+
+- **Replay**: vectorized polars twin of the live store, verified byte-parity
+  against the serial oracle on 100K rows (worst abs diff 2.3e-12 ≤ 1e-6).
+  Full replay (14.63M train / 4.88M val / 4.88M test): 114s + 25s + 26s locally.
+- **Training (honest cap)**: 2.5M-row train slice (full-correct velocity
+  features), best_iteration=108, 68.8s. Full-data 14.6M velocity training is a
+  Kaggle step (~2h CPU; see `docs/FUSION_KAGGLE_RUNBOOK.md` §4b).
+- **Full-set rescore** (4,877,380 val / 4,877,375 test rows, same sets as the
+  serving baseline): val ROC **0.8224** (AP 0.0642), test ROC **0.7646**
+  (AP 0.0038); test action counts allow 2.25M / review 282K / hold 2.34M,
+  caught frauds 4,130 hold + 153 review of 4,833 test frauds.
+
+### ⚠️ Promotion gate verdict: NOT promoted
+`make promote-velocity` gate requires val ROC ≥ serving's 0.8937. Velocity v3
+val ROC is **0.8224 < 0.8937 → gate rejects promotion**. Serve-online stays
+`baseline-online-xgb`. The gate is doing its job — the capped model is not a
+clean all-around win. Two honest observations for the story:
+
+1. **Test ROC is dramatically higher (0.7646 vs 0.5967)** and val→test decay is
+   far milder (0.822→0.765 vs 0.894→0.597): velocity features make ranking
+   *robust to the channel shift* documented in the Layer 5 finding.
+2. The gap is partly training-size (2.5M vs 14.6M rows). A full-data velocity
+   run on the T4 is the next evidence step, not a promise it will beat 0.8937.
 
 ## GNN (first full-data run, 2026-08-29)
 

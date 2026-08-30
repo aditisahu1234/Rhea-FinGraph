@@ -168,3 +168,12 @@ helix-train-repair:
 
 helix-healing-smoke:
 	OMP_NUM_THREADS=1 .venv/bin/python -c "from fastapi.testclient import TestClient; import fingraph_sentinel.main as m; c = TestClient(m.app); r = c.post('/api/v1/transactions/score', json={'transaction_id': 'smoke-heal-1', 'event_time': '2026-08-23T10:00:00Z', 'customer_id': 'c1', 'card_id': 'card1', 'merchant_id': '5411', 'amount': '399.00'}); print('scored :', r.json()['action']); print('feedback:', c.post('/api/v1/healing/feedback', json={'transaction_id': 'smoke-heal-1', 'outcome': 'fraud'}).json()); print('memory :', c.get('/api/v1/healing/memory').json()['stats']); print('report :', c.post('/api/v1/healing/heal').json()['actions'])"
+
+velocity-replay:
+	OMP_NUM_THREADS=1 .venv/bin/python -m fingraph_sentinel.velocity_replay --out-dir artifacts/data/velocity
+
+train-baseline-velocity:
+	OMP_NUM_THREADS=4 .venv/bin/python -m fingraph_sentinel.train_baseline --feature-set velocity --velocity-dir artifacts/data/velocity --out artifacts/models/baseline-online-v3
+
+promote-velocity:
+	OMP_NUM_THREADS=1 .venv/bin/python -c "import json, shutil, sys; from pathlib import Path; src=Path('artifacts/models/baseline-online-v3'); dst=Path('artifacts/models/baseline-online-xgb'); base=json.loads((dst/'model_config.json').read_text()); new=json.loads((src/'model_config.json').read_text()); val=float(new['metrics_validation']['roc_auc']); cur=float(base['metrics_validation']['roc_auc']); print(f'val ROC v3={val} vs current={cur}'); sys.exit(0 if val >= cur else 1) if val < cur else None; print('PROMOTING v3 -> serving'); [shutil.copyfile(src/f, dst/f) for f in ('model.json','model_config.json','merchant_fraud_priors.json','merchant_share.json','mcc_share.json')]; print('PROMOTED (backups: v2 files overwritten; history kept in docs/METRICS.md)')"
