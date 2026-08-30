@@ -56,6 +56,28 @@ LightGBM's test ROC looks high only because its broken val calibration
 collapses to near-random ordering by design threshold fallback — the honest
 read is the val ROC.
 
+## Business impact of the velocity decision stream (2026-08-31)
+
+`scripts/business_impact.py` rebuilds the v3 decision stream on the full
+locked test split and verifies **byte-parity** against the recorded config
+(ROC 0.7646, action counts, caught 4,130 hold + 153 review — all identical).
+Reproduction notes recorded for honesty: the metrics pipeline used the
+early-stopped model (best_iteration 108 ⇒ `iteration_range=(0, 109)`), and
+thresholds were applied on the RAW sigmoid probability scale.
+
+Real, assumption-stated numbers (`artifacts/business_impact.json`, amounts
+USD→INR @ 83.5, chargeback == event amount, 33-month test window):
+
+- Test fraud value **₹3.22 cr** (4,833 frauds); system caught **96.3% by
+  amount** (₹3.10 cr; 88.6% by count) at the configured thresholds;
+- **≈ ₹9.4L/month protected** vs ₹35.9K/month missed;
+- top fraud MCCs: 5311 ₹73.5L, 5712 ₹40.1L, 5310 ₹19.2L;
+- held-fraud signature vs allowed-legit (real, same stream): prior-amount
+  ratio **2.47×**, long-tail merchants (−94% 7-day volume), lower card
+  history priors — value-focused card fraud, not velocity-spike ATO.
+
+Pitch-ready framing lives in `docs/PITCH_STRATEGY.md`.
+
 ## Serving latency (Layer 0, 2026-08-30)
 
 Per-event scoring path was re-loading the 2.6 MB booster + rebuilding a SHAP

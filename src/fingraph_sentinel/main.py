@@ -325,6 +325,64 @@ def graph_status() -> GraphStatus:
     )
 
 
+# ---- Layer 4: model fight card (honest model race) ------------------------
+
+
+@app.get("/api/v1/model/race", tags=["models"])
+def model_race() -> dict:
+    """Real model registry from disk: serving, candidates, repair verdict.
+
+    Every row comes from the recorded model_config.json metrics (locked test
+    split where present) + the repair gate report. No fabricated rows; a
+    model without a config simply does not appear.
+    """
+    import json  # noqa: PLC0415
+
+    MODELS_DIR = Path("artifacts/models")
+    SERVING_NAME = "baseline-online-xgb"
+    rows: list[dict] = []
+    if MODELS_DIR.exists():
+        for d in sorted(MODELS_DIR.iterdir()):
+            cfg_path = d / "model_config.json"
+            if not cfg_path.exists():
+                continue
+            try:
+                c = json.loads(cfg_path.read_text())
+            except Exception:  # noqa: BLE001 - corrupt config skipped
+                continue
+            mv = c.get("metrics_validation") or {}
+            mt = c.get("metrics_test_locked") or {}
+            if d.name == SERVING_NAME:
+                role = "serving"
+            elif mt.get("action_counts"):
+                role = "promotion-candidate"
+            else:
+                role = "candidate"
+            rows.append({
+                "name": d.name,
+                "label": c.get("model_name", d.name),
+                "backend": c.get("backend"),
+                "feature_set": c.get("feature_set"),
+                "training_rows": c.get("training_rows"),
+                "created_at": c.get("created_at"),
+                "val_roc": mv.get("roc_auc"),
+                "test_roc": mt.get("roc_auc"),
+                "test_ap": mt.get("average_precision"),
+                "test_action_counts": mt.get("action_counts"),
+                "caught_frauds_by_action": mt.get("caught_frauds_by_action"),
+                "thresholds": c.get("thresholds"),
+                "role": role,
+            })
+    gate: dict | None = None
+    gate_path = Path(settings.healing_dir) / "gate_report.json"
+    if gate_path.exists():
+        try:
+            gate = json.loads(gate_path.read_text())
+        except Exception:  # noqa: BLE001 - corrupt report => no verdict
+            gate = {"verdict": "unreadable"}
+    return {"models": rows, "serving_name": SERVING_NAME, "gate_report": gate}
+
+
 @app.post(
     "/api/v1/transactions/score",
     response_model=RiskDecision,

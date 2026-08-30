@@ -108,6 +108,33 @@ export function fetchGraphStatus(): Promise<GraphStatus> {
   return getJSON<GraphStatus>("/api/v1/graph/status");
 }
 
+// ---- Layer 4: model fight card -------------------------------------------
+
+export interface RaceModel {
+  name: string;
+  label: string;
+  backend: string | null;
+  feature_set: string | null;
+  training_rows: number | null;
+  created_at: string | null;
+  val_roc: number | null;
+  test_roc: number | null;
+  test_ap: number | null;
+  test_action_counts: Record<string, number> | null;
+  caught_frauds_by_action: Record<string, number> | null;
+  role: "serving" | "promotion-candidate" | "candidate";
+}
+
+export interface ModelRace {
+  models: RaceModel[];
+  serving_name: string;
+  gate_report: RepairGateReport | null;
+}
+
+export function fetchModelRace(): Promise<ModelRace> {
+  return getJSON<ModelRace>("/api/v1/model/race");
+}
+
 async function getJSON<T>(path: string): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, { cache: "no-store" });
   if (!res.ok) throw new Error(`GET ${path} -> ${res.status}`);

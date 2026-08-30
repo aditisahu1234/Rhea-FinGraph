@@ -135,3 +135,13 @@ def test_graph_status_no_pipeline_when_no_meta(monkeypatch) -> None:
     assert body["pipeline"]["source"] == "none"
     assert body["pipeline"].get("n_merchants") is None
     assert body["gnn"] is None
+
+
+def test_model_race_shape_and_serving_row() -> None:
+    body = client.get("/api/v1/model/race").json()
+    assert "models" in body and isinstance(body["models"], list)
+    assert "gate_report" in body
+    serving = [m for m in body["models"] if m["role"] == "serving"]
+    assert any(m["name"] == "baseline-online-xgb" for m in serving)
+    for m in body["models"]:
+        assert set(("name", "val_roc", "test_roc", "role")) <= set(m)
