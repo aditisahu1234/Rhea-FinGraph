@@ -44,6 +44,32 @@ clean all-around win. Two honest observations for the story:
 2. The gap is partly training-size (2.5M vs 14.6M rows). A full-data velocity
    run on the T4 is the next evidence step, not a promise it will beat 0.8937.
 
+## Repair-model promotion gate sim (2026-08-29)
+
+Local end-to-end pass of the Helix v2 promotion loop
+(`scripts/repair_gate_sim.py`), run exactly as documented in
+`docs/REPAIR_PROMOTION_GATE.md`:
+
+- **Memory**: validation rows `[3,000,000, 3,800,000)` — 800,000 episodes,
+  1,691 frauds (simulated post-hoc feedback with true labels).
+- **Candidate repair model**: `artifacts/healing/repair-candidate/`
+  (in-sample recall 0.0993 / precision 0.875 — in-sample only, never the
+  promotion argument).
+- **Locked gate slice L**: test rows `[3,000,000, 3,800,000)` — 800,000 rows,
+  1,160 frauds; ids locked in `artifacts/healing/gate_L_ids.json`.
+- **Serving baseline on L**: ROC **0.5107**, top-5k caught **7** frauds.
+- **Repair model on L**: ROC **0.5989**, top-5k caught **52** frauds.
+  (margin +0.088 ≥ 0.02 gate, top-5k 52 ≥ 12 gate) → verdict
+  **`pass_with_caveat`**.
+
+### ⚠️ Caveat
+The repair model's native feature space (amount + channel + merchant
+hot/failure-rate) is not the serving model's 40-feature space, so this
+head-to-head is **illustrative, not apples-to-apples**. Before any real
+promotion, confirm on a **shared feature representation on the T4**
+(see REPAIR_PROMOTION_GATE.md §2.4). The gate is a decision *record*, not a
+rubber stamp; actual serving remains `baseline-online-xgb`.
+
 ## GNN (first full-data run, 2026-08-29)
 
 - 30 yearly snapshots (months 21..50), 24.39M edges, 29,757 fraud edges
