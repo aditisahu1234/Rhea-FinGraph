@@ -125,12 +125,37 @@ fast-path — live behaviour-change detection (prior-amount ratio, device/mercha
 novelty) with its own threshold gate — is the specified next build (below),
 which would give the ATO story real labels and real metrics on a follow-up set.
 
-## 8. Actions — who does what
+## 8. SOTA roadmap — FraudTransformer now, IMHA/FraudGNN-RL later
 
-### Done (this session, reproducible)
-- `scripts/business_impact.py` — parity-verified (identical decision stream
-  to recorded config) revenue/ATO report → `artifacts/business_impact.json`.
-- `docs/PITCH_STRATEGY.md` (this file).
+We evaluated the three "Level 5" integrations you named (FraudTransformer
+AI-FIND ICAIF'25, IMHA IEEE 2025, FraudGNN-RL) against one honest bar: **can
+we ship it with real, reproducible metrics on our own locked split?** That
+bar decides what goes in this week.
+
+| Integration | Verdict | Why (honest) |
+|---|---|---|
+| **FraudTransformer** (GPT-style temporal, ICAIF'25) | ✅ **BUILT this week** | pure-PyTorch (no `transformers` dep), causal temporal transformer over per-customer sequences + interval embedding + focal loss; unit-tested causality (no future leakage); smoke-trained locally; full-data T4 runbook written |
+| **IMHA** (IEEE 2025, ROC 0.9784) | ⏳ roadmap | arXiv paper only — no public code, no dataset/split docs; 0.9784 is on *their* data and would be unverifiable as ours |
+| **FraudGNN-RL** (F1 97.3%) | ⏳ roadmap | paper-only; RL-GNN on a proprietary graph schema; no public weights; 97.3% F1 on their split (and F1 is mathematically low at our 0.099% fraud rate) |
+
+Pitch language: *"we shipped the strongest of the three as a real, tested
+component; the other two are honest roadmap items we would not fake."*
+
+### Done this week (all reproducible, all honest)
+- `src/fingraph_sentinel/fraud_transformer.py` + `train_fraud_transformer.py`
+  (causal temporal transformer, focal loss, early stop, locked-test gate).
+- `src/fingraph_sentinel/drift_switcher.py` — Page-Hinkley + ADWIN +
+  candidate ranking; **real result**: drift fired at 2015-01 (CUSUM + PSI
+  agree), auto-switch recommendation `baseline-online-xgb → baseline-online-v3`
+  persisted to `artifacts/healing/switch_decision_latest.json`.
+- `src/fingraph_sentinel/counterfactual.py` — operator-actionable
+  counterfactuals (amount/hour flips) for the explainability story.
+- Dashboard **Model-switcher panel** (drift alert + detector table), wired
+  to `/api/v1/model/switcher/status`.
+- `docs/CROSS_DATASET_KAGGLE_RUNBOOK.md` — BankShield-2M + IEEE-CIS prep +
+  train, same trainer, no retuning.
+- `scripts/comprehensive_metrics.py` → real Precision@K/AP/F1-max numbers on
+  the full locked test split for velocity-v3 and the serving baseline.
 
 ### Agent can do on request (no new technology)
 - Dashboard **Model fight-card panel** (SERVING vs v3 vs repair, real config

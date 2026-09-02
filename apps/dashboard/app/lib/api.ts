@@ -135,6 +135,51 @@ export function fetchModelRace(): Promise<ModelRace> {
   return getJSON<ModelRace>("/api/v1/model/race");
 }
 
+// ---- Concept-drift auto-switch --------------------------------------------
+
+export interface SwitchAlert {
+  detector: string;
+  window: string | number;
+  observed: number;
+  baseline: number;
+  message: string;
+}
+
+export interface SwitchDecision {
+  triggered: boolean;
+  reason: string;
+  from_model: string | null;
+  to_model: string | null;
+  source: string;
+  alerts: SwitchAlert[];
+}
+
+export interface DriftWindowRow {
+  month: string;
+  rows: number;
+  mean_score: number;
+  z_mean_score: number;
+  psi: number;
+  ewma_mean_score: number;
+  cusum_stat: number;
+  fraud_rate?: number;
+}
+
+export interface ModelSwitcherStatus {
+  serving_model: string;
+  last_decision: SwitchDecision | null;
+  drift_report: {
+    reference: Record<string, unknown>;
+    detectors: Record<string, unknown>;
+    windows: DriftWindowRow[];
+    alerts: Record<string, string>;
+  } | null;
+}
+
+export function fetchModelSwitcherStatus(): Promise<ModelSwitcherStatus> {
+  return getJSON<ModelSwitcherStatus>("/api/v1/model/switcher/status");
+}
+
 async function getJSON<T>(path: string): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, { cache: "no-store" });
   if (!res.ok) throw new Error(`GET ${path} -> ${res.status}`);

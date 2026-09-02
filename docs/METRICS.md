@@ -151,3 +151,70 @@ AUC falls, because the *input distribution* migrates:
 | `channel_chip` | 0.000 | 0.79 | large |
 
 `make helix` emits a per-feature drift table + retrain trigger from this.
+
+## Comprehensive metrics at the 0.099% fraud rate (2026-09-02)
+
+`scripts/comprehensive_metrics.py` scores the two real production parity
+pipelines on the FULL locked test split. F1 is mathematically tiny at a
+0.099% fraud rate (1 fraud per ~1,007 rows) — the meaningful metrics are
+ROC-AUC + Precision@K + Average Precision.
+
+| Model | ROC-AUC | AP | F1 (max-F1 thr) | Precision@100 | Precision@1k | Precision@10k | TP/FP |
+|---|---|---|---|---|---|---|---|
+| velocity-v3 | 0.7646 | 0.0038 | 0.0162 @0.9775 | 0.03 | 0.018 | 0.0102 | 188/18,177 |
+| baseline-online-xgb | 0.5967 | 0.0015 | 0.0107 @0.9752 | 0.01 | 0.009 | 0.0076 | 66/7,435 |
+
+(velocity-v3 action splits: allow 2,253,863 / review 282,052 / hold
+2,341,460 — byte-parity with its recorded `model_config.json`.)
+
+## FraudTransformer (SOTA temporal model, 2026-09-02)
+
+**Architecture** (pure PyTorch, GPT-style causal temporal transformer,
+single-transaction sequences per customer, tail-capped at 48 events):
+
+- 128-dim model, 8 heads, 4 layers, dropout 0.25, GELU MLP
+- sinusoidal positional + learnable log-spaced interval embedding
+- input: `[amount_log1p, interval_log1p, prev_amount_ratio]` +
+  mcc/channel/error embeddings
+- focal loss (alpha 0.45, gamma 2.0); ~817K params
+- causal mask hand-rolled as an explicit additive -inf 3D mask per head;
+  **unit-tested**: future tokens provably do not change earlier logits
+  (dup-tail test, `<1e-4`), padding does not leak (test passes with the
+  hand-rolled block; PyTorch's TransformerEncoder fast paths were found to
+  leak in 2.13.0 and were replaced)
+
+**Honest status (smoke only, 60K-train-band):** val AUC 0.5532 best epoch 1
+(2 epochs run) — architecture sanity check, NOT a production number. The
+locked test ROC is computed ONLY on a full-data run (smoke sets
+`metrics_test_locked: null` deliberately). Full-data T4 run:
+`kaggle/train_fraud_transformer_t4.ipynb`.
+
+**Realistic target on IBM chronological split:** ROC 0.85–0.92 (stated as a
+target, not a result). The SOTA paper numbers (IMHA ROC 0.9784, FraudGNN-RL
+F1 97.3%) are on the authors' own datasets/splits — never quoted as ours.
+
+## Concept-drift auto-switch (Layer 4, 2026-09-02)
+
+`drift_switcher.py`: Page-Hinkley + ADWIN over the monthly mean-score stream;
+on confirmed drift, rank candidates by recorded test ROC (degraded mode) and
+persist an auditable `artifacts/healing/switch_decision_latest.json`.
+
+**Real result on the real score stream** (68 monthly windows, July 2014 –
+Feb 2020): Page-Hinkley fired at **2015-01** — the first validation month,
+exactly the month the existing CUSUM and PSI detectors already flagged
+(3 independent detectors agree). The 8× mean-score jump (0.00075 → 0.0059)
+is the regime change the Layer-5 channel-drift finding sees.
+
+Decision recorded:
+`baseline-online-xgb → baseline-online-v3` (velocity v3's locked test ROC
+0.7646 > serving's observed test ROC 0.5967 under degraded mode).
+This is a **recommendation artifact** — the registry still pins
+`baseline-online-xgb`; promotion is an operator/CI action after review.
+Dashboard shows the "MODEL AUTO-SWITCHED" alert + detector window table.
+
+## Cross-dataset generalization prep (2026-09-02)
+
+BankShield-2M (HF) + IEEE-CIS (Kaggle) prep + train runbook:
+`docs/CROSS_DATASET_KAGGLE_RUNBOOK.md`. Same trainer, same leakage-safe
+splits, no retuning. Target (stated honestly as a target): ROC ≥ 0.82 on
+both unseen datasets; a failure is recorded as a finding, never erased.

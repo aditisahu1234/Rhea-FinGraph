@@ -145,3 +145,10 @@ def test_model_race_shape_and_serving_row() -> None:
     assert any(m["name"] == "baseline-online-xgb" for m in serving)
     for m in body["models"]:
         assert set(("name", "val_roc", "test_roc", "role")) <= set(m)
+
+
+def test_model_switcher_status_shape() -> None:
+    body = client.get("/api/v1/model/switcher/status").json()
+    assert body["serving_model"] == "baseline-online-xgb"
+    assert "last_decision" in body
+    assert "drift_report" in body

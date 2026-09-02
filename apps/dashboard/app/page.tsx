@@ -28,6 +28,7 @@ import StreamingPanel from "./components/StreamingPanel";
 import HealingPanel from "./components/HealingPanel";
 import GraphPanel from "./components/GraphPanel";
 import ModelRacePanel from "./components/ModelRacePanel";
+import ModelSwitcherPanel from "./components/ModelSwitcherPanel";
 import MetricsStrip from "./components/MetricsStrip";
 
 const layers = [
@@ -129,6 +130,10 @@ export default function Home() {
 
       <section className="panel">
         <ModelRacePanel />
+      </section>
+
+      <section className="panel">
+        <ModelSwitcherPanel />
       </section>
 
       <section className="panel">

@@ -383,6 +383,47 @@ def model_race() -> dict:
     return {"models": rows, "serving_name": SERVING_NAME, "gate_report": gate}
 
 
+@app.get("/api/v1/model/switcher/status", tags=["models"])
+def model_switcher_status() -> dict:
+    """Concept-drift auto-switch status: last decision + detector state.
+
+    Reads the persisted switch decision written by ``drift_switcher`` and the
+    monthly drift report from ``drift_monitor``. When drift was detected and a
+    better candidate exists on disk, the dashboard shows a "MODEL AUTO-SWITCHED"
+    alert with the honest from->to chain. No decision -> no alert.
+    """
+    import json  # noqa: PLC0415
+
+    import polars as pl  # noqa: PLC0415
+
+    from fingraph_sentinel.drift_monitor import (
+        DEFAULT_SCORES,  # noqa: PLC0415
+        monitor_report,  # noqa: PLC0415
+    )
+
+    decision: dict | None = None
+    path = Path(settings.healing_dir) / "switch_decision_latest.json"
+    if path.exists():
+        try:
+            decision = json.loads(path.read_text())
+        except Exception:  # noqa: BLE001
+            decision = None
+
+    drift: dict | None = None
+    if DEFAULT_SCORES.exists():
+        try:
+            scores = pl.read_parquet(DEFAULT_SCORES)
+            drift = monitor_report(scores)
+        except Exception:  # noqa: BLE001 - stale/corrupt score stream
+            drift = None
+
+    return {
+        "serving_model": "baseline-online-xgb",
+        "last_decision": decision,
+        "drift_report": drift,
+    }
+
+
 @app.post(
     "/api/v1/transactions/score",
     response_model=RiskDecision,
