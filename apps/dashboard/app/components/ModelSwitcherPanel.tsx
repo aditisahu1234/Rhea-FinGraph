@@ -1,10 +1,13 @@
 "use client";
 
-// ModelSwitcherPanel — concept-drift auto-switch status (Layer 4).
-// Shows the honest current state: no decision yet = no alert; if drift was
-// ever detected and a better candidate existed, a "MODEL AUTO-SWITCHED" alert
-// with the real from->to chain appears. Detector table comes from the real
-// monthly drift report (EWMA/CUSUM/PSI over train-reference).
+// ModelSwitcherPanel — drift-aware model recommendation with gated promotion
+// (Layer 4). LIMITATION #9 framing: the switcher only RECOMMENDS; it never
+// silently promotes. The model registry stays pinned to the serving model
+// until an operator/CI passes the promotion gate. Shows the honest current
+// state: no decision yet = no alert; if drift was ever detected and a better
+// candidate existed, a "DRIFT RECOMMENDATION" alert with the real from->to
+// chain appears. Detector table comes from the real monthly drift report
+// (EWMA/CUSUM/PSI over train-reference).
 
 import { useCallback, useEffect, useState } from "react";
 import {
@@ -38,16 +41,18 @@ export default function ModelSwitcherPanel() {
   return (
     <div className="panel">
       <div className="panel-head">
-        <h2 className="panel-title">Concept-drift auto-switch · Layer 4</h2>
+        <h2 className="panel-title">Drift-aware recommendation · gated promotion</h2>
         <span className="pill ok">ADWIN + PAGE-HINKLEY</span>
       </div>
       <p className="panel-sub">
         Serving model: <b>{status?.serving_model ?? "baseline-online-xgb"}</b>.
         Drift detectors watch the score stream against the train-period
-        reference; on a confirmed shift the system auto-promotes the best
+        reference. On a confirmed shift the system RECOMMENDS the best
         candidate whose recorded test ROC beats the serving model&apos;s observed
-        test ROC. No switch decision on disk = no switch performed — the
-        absence of an alert is the honest state.
+        test ROC — but it does <b>not</b> silently promote it: the registry
+        stays pinned until an operator/CI passes the promotion gate. No
+        recommendation on disk = no recommendation performed (the honest
+        state).
       </p>
 
       {err && <p className="empty">switcher API unreachable: {err}</p>}
@@ -56,7 +61,7 @@ export default function ModelSwitcherPanel() {
       {decision?.triggered && (
         <div className="switch-alert">
           <span className="switch-alert-title">
-            ⚠ MODEL AUTO-SWITCHED
+            ⚠ DRIFT RECOMMENDATION · GATED
           </span>
           <span className="switch-alert-body">
             {decision.from_model} → {decision.to_model}
@@ -67,7 +72,7 @@ export default function ModelSwitcherPanel() {
       )}
       {!decision?.triggered && status && (
         <div className="pill ok switch-quiet">
-          NO AUTO-SWITCH FIRED — serving model unchanged (drift watch active)
+          NO RECOMMENDATION FIRED — serving model unchanged (gated promotion, drift watch active)
         </div>
       )}
 

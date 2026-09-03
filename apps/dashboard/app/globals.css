@@ -287,3 +287,14 @@ input:focus, select:focus { border-color: var(--accent); }
 .subhead { font-size: 0.82rem; color: var(--muted); margin: 0 0 6px; }
 .result-sec { margin: 6px 0 8px; font-size: 0.78rem; color: var(--ink); }
 .sec-ta { color: var(--pos); text-transform: uppercase; letter-spacing: 0.04em; }
+
+/* ---- LIMITATION #6: hero + future-ensemble positioning ---- */
+.hero-card {
+  border: 1px solid var(--pos); border-radius: 10px; padding: 12px 14px;
+  margin: 10px 0 12px; background: rgba(45, 212, 191, 0.06);
+}
+.hero-card-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.hero-note { font-size: 0.76rem; color: var(--ink); margin: 8px 0; }
+.hero-star { color: var(--warn); }
+.race-row.race-hero { border-left: 3px solid var(--pos); background: rgba(45, 212, 191, 0.05); }
+.tag.race-research { background: rgba(148, 163, 184, 0.14); color: #94a3b8; border-color: #475569; }

@@ -33,6 +33,8 @@ import MetricsStrip from "./components/MetricsStrip";
 import BusinessImpactPanel from "./components/BusinessImpactPanel";
 import FinancialImpactCard from "./components/FinancialImpactCard";
 import RazorpayDemoPanel from "./components/RazorpayDemoPanel";
+import AttackSimulatorPanel from "./components/AttackSimulatorPanel";
+import OutcomePanel from "./components/OutcomePanel";
 
 const layers = [
   ["0 · Live scoring", "score every event · explain + audit · never executes"],
@@ -128,6 +130,10 @@ export default function Home() {
       </div>
 
       <RazorpayDemoPanel />
+
+      <AttackSimulatorPanel />
+
+      <OutcomePanel />
 
       <section className="panel">
         <StreamingPanel />

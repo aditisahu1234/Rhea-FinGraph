@@ -70,6 +70,17 @@ _PROBES: list[tuple[str, str, Any]] = [
         lambda v: float(v) >= 0.01,
     ),
     (
+        "merch_v_7d_count",
+        "This merchant's recent activity deviates sharply from its "
+        "historical 7-day volume (a structural anomaly).",
+        lambda v: float(v) >= 20,
+    ),
+    (
+        "merch_v_24h_count",
+        "This merchant has unusually high 24h transaction volume.",
+        lambda v: float(v) >= 40,
+    ),
+    (
         "channel_swipe",
         "This is a swipe (card-present) transaction, a channel with "
         "structural fraud risk.",

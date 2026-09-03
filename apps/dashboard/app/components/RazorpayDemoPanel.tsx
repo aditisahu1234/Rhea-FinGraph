@@ -10,9 +10,11 @@ import { useState } from "react";
 import {
   createDemoOrder,
   payDemoOrder,
+  sendRazorpayEvent,
   sendRazorpayWebhook,
   type DemoOrder,
   type DemoWebhook,
+  type RazorpayEventResponse,
   type WebhookResponse,
 } from "../lib/api";
 
@@ -36,6 +38,9 @@ export default function RazorpayDemoPanel() {
   const [hook, setHook] = useState<DemoWebhook | null>(null);
   const [wh, setWh] = useState<WebhookResponse | null>(null);
   const [whAmount, setWhAmount] = useState("199900"); // paise
+  const [rz, setRz] = useState<RazorpayEventResponse | null>(null);
+  const [rzMethod, setRzMethod] = useState("upi");
+  const [rzAmount, setRzAmount] = useState("125000"); // paise
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
@@ -84,6 +89,33 @@ export default function RazorpayDemoPanel() {
       setWh(r);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "webhook failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function fireEvent() {
+    setErr("");
+    setBusy(true);
+    try {
+      const r = await sendRazorpayEvent({
+        payment_id: `pay_${rzMethod}_${Date.now()}`,
+        order_id: `order_${Date.now()}`,
+        merchant_id: merchant,
+        customer_id: "C-RZ-PROD-1",
+        amount: Number(rzAmount) || 0,
+        currency: "INR",
+        method: rzMethod,
+        timestamp: new Date().toISOString(),
+        device_id: "dev_7f2a",
+        ip_hash: "ip_9c01",
+        "3ds_status": rzMethod === "card" ? "Y" : "NOT_APPLICABLE",
+        step_up_required: rzMethod === "card",
+        ...(rzMethod === "card" ? { card_present: false } : {}),
+      });
+      setRz(r);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "event failed");
     } finally {
       setBusy(false);
     }
@@ -227,6 +259,73 @@ export default function RazorpayDemoPanel() {
             <div className="muted small">
               audited: {wh.audit.transaction_id} · decision auditable{" "}
               {String(wh.audit.decision_auditable)}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="demo-webhook">
+        <h3 className="subhead">…or send a full Razorpay event (contract ≠ training set)</h3>
+        <div className="demo-controls">
+          <label>
+            Method
+            <select value={rzMethod} onChange={(e) => setRzMethod(e.target.value)}>
+              <option value="upi">UPI</option>
+              <option value="card">Card (card-not-present)</option>
+              <option value="wallet">Wallet</option>
+              <option value="netbanking">Netbanking</option>
+            </select>
+          </label>
+          <label>
+            Amount (paise)
+            <input
+              type="text"
+              value={rzAmount}
+              onChange={(e) => setRzAmount(e.target.value)}
+            />
+          </label>
+          <button onClick={fireEvent} disabled={busy}>
+            {busy ? "…" : "Score Razorpay event"}
+          </button>
+        </div>
+        {rz && (
+          <div className={`demo-verdict ${ACTION_TONE[rz.decision.action] ?? ""}`}>
+            <div className="demo-big">
+              <b>{rz.decision.action.toUpperCase()}</b>
+              <span className="muted">
+                {" "}
+                · risk {rz.decision.fraud_probability.toFixed(4)} ·{" "}
+                {rz.decision.verdict}
+              </span>
+            </div>
+            <div className="muted small">
+              model {rz.decision.model_version} · security action{" "}
+              <b className="demo-sec">{rz.decision.security_action}</b>
+              {rz.decision.is_cold_start ? (
+                <span className="pill demo-cold">COLD-START RULE ROUTE</span>
+              ) : null}
+            </div>
+            {rz.decision.reasons_human && rz.decision.reasons_human.length > 0 && (
+              <ul className="demo-reasons">
+                {rz.decision.reasons_human.map((r, i) => (
+                  <li key={`e${i}`}>{r}</li>
+                ))}
+              </ul>
+            )}
+            <div className="muted small">
+              mapped channel <b>{rz.mapping.canonical_channel}</b> · model
+              features used:{" "}
+              {rz.mapping.model_features.length
+                ? rz.mapping.model_features.join(", ")
+                : "none (new method → safe all-zero)"}
+            </div>
+            <div className="muted small">
+              future ensemble signals (not model inputs):{" "}
+              {rz.future_signals_not_model_inputs.join(", ")}
+            </div>
+            <div className="muted small">
+              audited: {rz.audit.transaction_id} · decision auditable{" "}
+              {String(rz.audit.decision_auditable)}
             </div>
           </div>
         )}

@@ -128,12 +128,23 @@ export interface RaceModel {
   test_action_counts: Record<string, number> | null;
   caught_frauds_by_action: Record<string, number> | null;
   role: "serving" | "promotion-candidate" | "candidate";
+  // LIMITATION #6 — hero vs future-ensemble positioning.
+  is_hero?: boolean;
+  is_research?: boolean;
+}
+
+export interface ModelRacePositioning {
+  hero_model: string;
+  hero_note: string;
+  hero_metrics: Record<string, number | null>;
+  research_as_future_ensemble: string;
 }
 
 export interface ModelRace {
   models: RaceModel[];
   serving_name: string;
   gate_report: RepairGateReport | null;
+  positioning?: ModelRacePositioning;
 }
 
 export function fetchModelRace(): Promise<ModelRace> {
@@ -350,6 +361,51 @@ export async function sendRazorpayWebhook(
   return (await res.json()) as WebhookResponse;
 }
 
+// ---- Razorpay synthetic event (LIMITATION #5: contract != training set) --
+
+export interface RazorpayEventResponse {
+  received: boolean;
+  decision: {
+    fraud_probability: number;
+    action: "allow" | "review" | "hold";
+    security_action: "APPROVE" | "REQUEST_STEP_UP" | "DECLINE";
+    verdict: string;
+    is_cold_start: boolean;
+    reasons_human: string[];
+    model_version: string;
+  };
+  mapping: {
+    payment_id: string;
+    canonical_channel: string;
+    model_feature_used: boolean;
+    model_features: string[];
+    future_signals_not_model_inputs: string[];
+    amount_inr: number;
+    currency: string;
+  };
+  future_signals_not_model_inputs: string[];
+  audit: {
+    transaction_id: string;
+    decision_auditable: boolean;
+    processed_at: string | null;
+  };
+}
+
+export async function sendRazorpayEvent(
+  payload: Record<string, unknown>
+): Promise<RazorpayEventResponse> {
+  const res = await fetch(`${API_BASE}/api/v1/razorpay/event`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(`event -> ${res.status}: ${JSON.stringify(err)}`);
+  }
+  return (await res.json()) as RazorpayEventResponse;
+}
+
 export function fetchHelixDrift(): Promise<HelixDriftReport> {
   return getJSON<HelixDriftReport>("/api/v1/helix/drift");
 }
@@ -538,4 +594,131 @@ export async function sendFeedback(
   });
   if (!res.ok) throw new Error(`feedback -> ${res.status}`);
   return (await res.json()) as Record<string, unknown>;
+}
+
+// ---- LIMITATION #7: attack-scenario simulator -----------------------------
+export interface AttackScenarioMeta {
+  key: string;
+  title: string;
+  description: string;
+  n_events: number;
+  channel: string;
+}
+
+export interface AttackScenarios {
+  source: string;
+  honesty: string;
+  scenarios: AttackScenarioMeta[];
+}
+
+export interface AttackStep {
+  index: number;
+  amount_inr: number;
+  risk: number;
+  raw_margin: number;
+  action: string;
+  model_version: string;
+  is_cold_start: boolean;
+}
+
+export interface AttackSimulation {
+  scenario: string;
+  title: string;
+  description: string;
+  n_events: number;
+  risk_before: number | null;
+  risk_after: number | null;
+  delta_risk: number | null;
+  raw_margin_before: number | null;
+  raw_margin_after: number | null;
+  delta_raw_margin: number | null;
+  calibration_note: string;
+  model_used: string | null;
+  honesty: string;
+  steps: AttackStep[];
+}
+
+export function fetchAttackScenarios(): Promise<AttackScenarios> {
+  return getJSON<AttackScenarios>("/api/v1/attack/scenarios");
+}
+
+export async function runAttackSimulation(
+  scenario: string
+): Promise<AttackSimulation> {
+  const res = await fetch(`${API_BASE}/api/v1/attack/simulate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ scenario }),
+  });
+  if (!res.ok) throw new Error(`attack/simulate -> ${res.status}`);
+  return (await res.json()) as AttackSimulation;
+}
+
+// ---- LIMITATION #10: outcome / chargeback simulator -----------------------
+export interface OutcomePnlRow {
+  transaction_id: string;
+  action: string;
+  outcome: string;
+  amount_inr: number;
+  classification: string;
+  protected_value: number;
+  missed_value: number;
+  false_positive_cost: number;
+}
+
+export interface OutcomePnl {
+  n: number;
+  fraud_prevented_value: number;
+  missed_fraud_value: number;
+  false_positive_cost: number;
+  net_protected_value: number;
+  prevented_count: number;
+  missed_count: number;
+  false_positive_count: number;
+  by_class: Record<string, number>;
+  rows: OutcomePnlRow[];
+}
+
+export interface VerifiedOutcome {
+  mode: "verified";
+  model: string;
+  split: string;
+  as_of: string;
+  parity_note: string;
+  fraud_prevented_value: number;
+  missed_fraud_value: number;
+  false_positive_legit_holds: number;
+  false_positive_note: string;
+  frauds_total: number;
+  frauds_caught: number;
+  recall_by_count: number;
+  recall_by_amount: number;
+  per_month_protected_inr: number;
+  net_protected_value: number;
+  net_protected_note: string;
+  honesty: string;
+}
+
+export interface SyntheticOutcome {
+  mode: "synthetic";
+  scenario: string;
+  title: string;
+  description: string;
+  fraud_from: number;
+  n_events: number;
+  model_used: string;
+  pnl: OutcomePnl;
+  honesty: string;
+}
+
+export type AttackOutcome = VerifiedOutcome | SyntheticOutcome;
+
+export async function runAttackOutcome(payload: Record<string, unknown>): Promise<AttackOutcome> {
+  const res = await fetch(`${API_BASE}/api/v1/attack/outcome`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(`attack/outcome -> ${res.status}`);
+  return (await res.json()) as AttackOutcome;
 }
