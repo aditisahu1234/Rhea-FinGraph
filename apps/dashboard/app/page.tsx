@@ -30,6 +30,8 @@ import GraphPanel from "./components/GraphPanel";
 import ModelRacePanel from "./components/ModelRacePanel";
 import ModelSwitcherPanel from "./components/ModelSwitcherPanel";
 import MetricsStrip from "./components/MetricsStrip";
+import BusinessImpactPanel from "./components/BusinessImpactPanel";
+import RazorpayDemoPanel from "./components/RazorpayDemoPanel";
 
 const layers = [
   ["0 · Live scoring", "score every event · explain + audit · never executes"],
@@ -101,6 +103,8 @@ export default function Home() {
 
       <MetricsStrip status={status} />
 
+      <BusinessImpactPanel />
+
       <div className="pool">
         <section className="panel score-panel">
           <div className="panel-head">
@@ -119,6 +123,8 @@ export default function Home() {
           />
         </section>
       </div>
+
+      <RazorpayDemoPanel />
 
       <section className="panel">
         <StreamingPanel />

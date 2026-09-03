@@ -424,6 +424,166 @@ def model_switcher_status() -> dict:
     }
 
 
+@app.get("/api/v1/business/impact", tags=["risk"])
+def business_impact() -> dict:
+    """Razorpay-relevant operating-point recap (LIMITATION #1).
+
+    Serves the parity-verified business numbers computed offline by
+    scripts/business_impact.py (locked test split, velocity-v3 decision
+    stream reproduced byte-for-byte against the recorded model_config):
+    allow/review/hold volumes, frauds caught, recall by count & amount,
+    protected/missed ₹, top MCCs by fraud amount. All fields are read from
+    the artifact, never synthesised here.
+    """
+    import json  # noqa: PLC0415
+
+    path = Path("artifacts/business_impact.json")
+    if not path.exists():
+        return {
+            "available": False,
+            "note": "Run scripts/business_impact.py to generate the operating-point recap.",
+        }
+    try:
+        report = json.loads(path.read_text())
+    except Exception:  # noqa: BLE001
+        return {"available": False, "note": "business_impact.json unreadable."}
+    report["available"] = True
+    return report
+
+
+@app.post("/api/v1/razorpay/order", tags=["razorpay"])
+def razorpay_create_order(body: dict) -> dict:
+    """Razorpay demo: create a test order (LIMITATION #2).
+
+    Accepts amount_inr (string) + optional merchant/customer/card selectors and
+    returns a created order with the canonical PaymentEvent that represents
+    its payment. This is the FINGRAPH-facing step of the merchant flow:
+    Razorpay-like event -> RISK MANAGER.
+    """
+    amount_inr = str(body.get("amount_inr", "1999.00"))
+    from fingraph_sentinel.razorpay_demo import create_order  # noqa: PLC0415
+
+    try:
+        return create_order(
+            amount_inr=amount_inr,
+            merchant_key=str(body.get("merchant_id", "TerraMart-5311")),
+            customer_id=str(body.get("customer_id", "C-DEMO-1001")),
+            card_id=str(body.get("card_id", "K-DEMO-2001")),
+            payment_error=body.get("payment_error"),
+        )
+    except Exception as exc:  # noqa: BLE001 - bad input => clean 400-style message
+        return {"error": "invalid_amount", "detail": str(exc)}
+
+
+@app.post("/api/v1/razorpay/pay", tags=["razorpay"])
+def razorpay_pay(body: dict) -> dict:
+    """Razorpay demo: run one order through FINGRAPH and return the decision.
+
+    Takes the order_id from /razorpay/order (or a bare PaymentEvent), scores it
+    through the exact same velocity -> XGBoost -> SHAP -> calibrated action ->
+    audit path as live traffic, and returns the Razorpay-style webhook payload.
+    The decision is never hidden behind a fake threshold — it is the audited
+    ScoreResult from serving.score_event.
+    """
+    from fastapi import HTTPException  # noqa: PLC0415
+
+    from fingraph_sentinel.razorpay_demo import (  # noqa: PLC0415
+        _ORDERS,
+        build_webhook,
+        create_order,
+    )
+
+    order_id = body.get("order_id")
+    event = None
+    if order_id:
+        order = _ORDERS.get(order_id)
+        if order is None:
+            raise HTTPException(status_code=404, detail="unknown order_id")
+        event = order.event
+    else:
+        # allow a bare PaymentEvent payload directly (no pre-created order)
+        try:
+            evt_body = {k: v for k, v in body.items()
+                        if k in {"transaction_id", "event_time", "customer_id",
+                                 "card_id", "merchant_id", "merchant_category_code",
+                                 "amount", "payment_channel", "merchant_city",
+                                 "merchant_country", "payment_error"}}
+            if not evt_body.get("event_time"):
+                import time  # noqa: PLC0415
+                evt_body["event_time"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+            event = PaymentEvent(**evt_body)
+            # register a matching order for the webhook
+            order = create_order(
+                amount_inr=str(float(event.amount) * 83.5),
+                merchant_key=event.merchant_id if event.merchant_id else "TerraMart-5311",
+                customer_id=event.customer_id,
+                card_id=event.card_id,
+                payment_error=event.payment_error,
+            )
+        except Exception as exc:  # noqa: BLE001 - malformed event
+            raise HTTPException(status_code=422, detail=f"invalid payment event: {exc}")
+
+    velocity = get_velocity().compute(event)
+    try:
+        if not _model_ready():
+            decision = _safe_review_decision(event)
+        else:
+            values = event_feature_dict(event, velocity=velocity)
+            import json as _json  # noqa: PLC0415
+
+            from fingraph_sentinel.serving import MODEL_DIR as _SERVING_DIR  # noqa: PLC0415
+            _cfg = _json.loads((_SERVING_DIR / "model_config.json").read_text())
+            result = score_event(
+                values,
+                feature_columns=list(_cfg["feature_columns"]),
+                boilerplate_reasons=boilerplate_reasons(event),
+            )
+            decision = RiskDecision(
+                transaction_id=event.transaction_id,
+                model_version=result.model_version,
+                fraud_probability=round(result.fraud_probability, 6),
+                action=result.action,  # type: ignore[arg-type]
+                reasons=[
+                    RiskReason(feature=r.feature, direction=r.direction,  # type: ignore[arg-type]
+                               detail=r.detail, magnitude=r.magnitude)
+                    for r in result.reasons
+                ],
+                is_model_ready=True,
+                processed_at=datetime.now(UTC).isoformat(),
+            )
+            _apply_threshold_override(decision)
+    except Exception:  # noqa: BLE001 - fail safe to review, never fail open
+        decision = _safe_review_decision(event)
+    finally:
+        get_velocity().observe(event)
+
+    _audit("decision.razorpay_demo", event, decision)
+    webhook = build_webhook(order, decision)
+    webhook["order"]["order_id"] = (body.get("order_id") or webhook["order"]["order_id"])
+    return webhook
+
+
+@app.get("/api/v1/razorpay/flow", tags=["razorpay"])
+def razorpay_flow() -> dict:
+    """Describe the demo payment lifecycle for the dashboard/docs."""
+    return {
+        "flow": [
+            "create order (Razorpay test-mode shape)",
+            "payment event reaches FINGRAPH",
+            "velocity (strictly-past) computed",
+            "XGBoost serve + SHAP -> calibrated action",
+            "decision ALLOW / REVIEW / HOLD",
+            "webhook -> audit ledger",
+        ],
+        "endpoints": {
+            "create_order": "POST /api/v1/razorpay/order",
+            "pay": "POST /api/v1/razorpay/pay",
+            "flow": "GET /api/v1/razorpay/flow",
+        },
+        "note": "Demo adapter; no live Razorpay keys or network calls.",
+    }
+
+
 @app.post(
     "/api/v1/transactions/score",
     response_model=RiskDecision,

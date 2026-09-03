@@ -190,6 +190,100 @@ export function fetchModelStatus(): Promise<ModelStatus> {
   return getJSON<ModelStatus>("/api/v1/model/status");
 }
 
+// ---- Razorpay-relevant business operating point (LIMITATION #1) --------
+
+export interface BusinessImpact {
+  available: boolean;
+  model?: string;
+  split?: string;
+  parity?: {
+    roc_auc_recomputed: number;
+    ap_recomputed: number;
+    matches_recorded_config: boolean;
+  };
+  assumptions?: Record<string, unknown>;
+  totals?: { rows: number; frauds: number; fraud_amount_inr: number };
+  actions?: Record<string, number>;
+  caught_by_action?: Record<
+    string,
+    { count: number; amount_inr: number }
+  >;
+  protection?: {
+    frauds_caught: number;
+    recall_by_count: number;
+    recall_by_amount: number;
+    fraud_amount_caught_inr: number;
+    fraud_amount_missed_inr: number;
+    per_month_protected_inr: number;
+    per_month_missed_inr: number;
+  };
+  top_mcc_by_fraud_amount?: { mcc: string; fraud_amount_inr: number }[];
+  ato_evidence?: Record<string, Record<string, number | null>>;
+}
+
+export function fetchBusinessImpact(): Promise<BusinessImpact> {
+  return getJSON<BusinessImpact>("/api/v1/business/impact");
+}
+
+// ---- Razorpay demo adapter (LIMITATION #2) -----------------------------
+
+export interface DemoOrder {
+  order_id: string;
+  amount_inr: string;
+  currency: string;
+  status: string;
+  event: Record<string, unknown>;
+}
+
+export interface DemoWebhook {
+  event: string;
+  order: { order_id: string; amount_inr: string; currency: string };
+  risk_assessment: {
+    model_version: string;
+    fraud_probability: number;
+    action: "allow" | "review" | "hold";
+    fraud_verdict: string;
+    top_reasons: {
+      feature: string;
+      direction: string;
+      detail: string;
+      magnitude: number | null;
+    }[];
+  };
+  audit: {
+    transaction_id: string;
+    decision_auditable: boolean;
+    processed_at: string | null;
+  };
+}
+
+export async function createDemoOrder(
+  amountInr: string,
+  merchantId: string
+): Promise<DemoOrder> {
+  const res = await fetch(`${API_BASE}/api/v1/razorpay/order`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ amount_inr: amountInr, merchant_id: merchantId }),
+  });
+  if (!res.ok) throw new Error(`createOrder -> ${res.status}`);
+  return (await res.json()) as DemoOrder;
+}
+
+export async function payDemoOrder(orderId: string): Promise<DemoWebhook> {
+  const res = await fetch(`${API_BASE}/api/v1/razorpay/pay`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ order_id: orderId }),
+  });
+  if (!res.ok) throw new Error(`pay -> ${res.status}`);
+  return (await res.json()) as DemoWebhook;
+}
+
+export function fetchRazorpayFlow(): Promise<{ flow: string[]; endpoints: Record<string, string> }> {
+  return getJSON("/api/v1/razorpay/flow");
+}
+
 export function fetchHelixDrift(): Promise<HelixDriftReport> {
   return getJSON<HelixDriftReport>("/api/v1/helix/drift");
 }
