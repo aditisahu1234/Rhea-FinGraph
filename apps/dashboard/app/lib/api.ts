@@ -19,6 +19,11 @@ export interface RiskDecision {
   reasons: RiskReason[];
   is_model_ready: boolean;
   processed_at: string | null;
+  // LIMITATION #3 — concrete payment-security action + readable summary.
+  security_action?: "APPROVE" | "REQUEST_STEP_UP" | "DECLINE";
+  reasons_human?: string[];
+  // LIMITATION #4 — cold-start routing flag (conservative rule engine).
+  is_cold_start?: boolean;
 }
 
 export interface FeatureDrift {
@@ -225,6 +230,24 @@ export function fetchBusinessImpact(): Promise<BusinessImpact> {
   return getJSON<BusinessImpact>("/api/v1/business/impact");
 }
 
+// ---- Financial-impact headline cards (sprint Hour 2-3) ------------------
+
+export interface ImpactSummary {
+  available: boolean;
+  total_protected_inr: number | null;
+  monthly_protected_inr: number | null;
+  fraud_amount_blocked_rate: number | null;
+  fraud_events_blocked_rate: number | null;
+  total_fraud_inr?: number | null;
+  missed_inr?: number | null;
+  model?: string;
+  split?: string;
+}
+
+export function fetchImpactSummary(): Promise<ImpactSummary> {
+  return getJSON<ImpactSummary>("/api/v1/impact/summary");
+}
+
 // ---- Razorpay demo adapter (LIMITATION #2) -----------------------------
 
 export interface DemoOrder {
@@ -242,7 +265,10 @@ export interface DemoWebhook {
     model_version: string;
     fraud_probability: number;
     action: "allow" | "review" | "hold";
+    security_action?: "APPROVE" | "REQUEST_STEP_UP" | "DECLINE";
     fraud_verdict: string;
+    is_cold_start?: boolean;
+    reasons_human?: string[];
     top_reasons: {
       feature: string;
       direction: string;
@@ -282,6 +308,46 @@ export async function payDemoOrder(orderId: string): Promise<DemoWebhook> {
 
 export function fetchRazorpayFlow(): Promise<{ flow: string[]; endpoints: Record<string, string> }> {
   return getJSON("/api/v1/razorpay/flow");
+}
+
+// ---- Simulate a Razorpay webhook (sprint Hour 0-1) ----------------------
+
+export interface WebhookRisk {
+  model_version: string;
+  fraud_probability: number;
+  decision: "allow" | "review" | "hold";
+  security_action: "APPROVE" | "REQUEST_STEP_UP" | "DECLINE";
+  is_cold_start: boolean;
+  reasons_human: string[];
+  verdict: string;
+}
+
+export interface WebhookResponse {
+  received: boolean;
+  order_id: string | null;
+  payment_id: string | null;
+  risk: WebhookRisk;
+  webhook_to_merchant: string;
+  audit: {
+    transaction_id: string;
+    decision_auditable: boolean;
+    processed_at: string | null;
+  };
+}
+
+export async function sendRazorpayWebhook(
+  payload: Record<string, unknown>
+): Promise<WebhookResponse> {
+  const res = await fetch(`${API_BASE}/api/v1/razorpay/webhook`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(`webhook -> ${res.status}: ${JSON.stringify(err)}`);
+  }
+  return (await res.json()) as WebhookResponse;
 }
 
 export function fetchHelixDrift(): Promise<HelixDriftReport> {

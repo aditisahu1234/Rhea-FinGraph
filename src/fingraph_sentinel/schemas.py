@@ -38,6 +38,9 @@ class RiskReason(BaseModel):
     magnitude: float | None = Field(
         default=None, description="Signed contribution, e.g. SHAP margin value"
     )
+    human: str | None = Field(
+        default=None, description="Product-grade human-readable sentence (LIMITATION #3)"
+    )
 
 
 class RiskDecision(BaseModel):
@@ -50,6 +53,12 @@ class RiskDecision(BaseModel):
     processed_at: str | None = Field(
         default=None, description="ISO-8601 processing timestamp"
     )
+    # LIMITATION #3 — concrete payment-security action on top of the model band.
+    security_action: Literal["APPROVE", "REQUEST_STEP_UP", "DECLINE"] = "REVIEW"
+    # LIMITATION #4 — cold-start routing flag (conservative rule engine).
+    is_cold_start: bool = False
+    # Product-facing summary reasons (human-readable clauses).
+    reasons_human: list[str] = Field(default_factory=list)
 
 
 class FeatureDrift(BaseModel):

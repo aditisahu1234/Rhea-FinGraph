@@ -122,9 +122,12 @@ def build_webhook(order: RazorpayOrder | dict, decision: RiskDecision) -> dict[s
     """
     order_id = order.order_id if isinstance(order, RazorpayOrder) else order["order_id"]
     amount_inr = order.amount_inr if isinstance(order, RazorpayOrder) else order["amount_inr"]
+    from fingraph_sentinel.explainer_ui import security_action  # noqa: PLC0415
+
     verdict = "APPROVED" if decision.action == "allow" else (
         "REVIEW" if decision.action == "review" else "MANUAL_HOLD"
     )
+    secur = getattr(decision, "security_action", None) or security_action(decision.action)
     return {
         "event": "payment.autocapture.succeeded" if decision.action == "allow"
         else "payment.risk_flagged",
@@ -137,7 +140,15 @@ def build_webhook(order: RazorpayOrder | dict, decision: RiskDecision) -> dict[s
             "model_version": decision.model_version,
             "fraud_probability": round(decision.fraud_probability, 6),
             "action": decision.action,
+            "security_action": secur,
             "fraud_verdict": verdict,
+            "is_cold_start": bool(getattr(decision, "is_cold_start", False)),
+            "reasons_human":
+                list(getattr(decision, "reasons_human", []))
+                or [
+                    f"{r.detail}" for r in decision.reasons[:4]
+                    if r.detail and r.detail not in ("", "None")
+                ],
             "top_reasons": [
                 {"feature": r.feature, "direction": r.direction, "detail": r.detail,
                  "magnitude": r.magnitude}

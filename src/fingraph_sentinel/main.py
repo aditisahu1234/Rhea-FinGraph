@@ -1,10 +1,13 @@
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import FastAPI, status
 
 from fingraph_sentinel.audit import Ledger
+from fingraph_sentinel.cold_start import cold_start_risk, is_cold_start
 from fingraph_sentinel.config import get_settings
+from fingraph_sentinel.explainer_ui import human_reasons, security_action, verdict
 from fingraph_sentinel.healing import HealingEngine
 from fingraph_sentinel.runtime import (
     boilerplate_reasons,
@@ -451,6 +454,46 @@ def business_impact() -> dict:
     return report
 
 
+@app.get("/api/v1/impact/summary", tags=["risk"])
+def impact_summary() -> dict:
+    """Compact financial-impact summary for dashboard cards (sprint Hour 2-3).
+
+    Reads the parity-verified business_impact.json and reduces it to the four
+    headline numbers a Razorpay judge cares about: total protected, monthly
+    protected, fraud amount blocked rate, fraud events blocked rate. All values
+    originate from the verified artifact — never computed or invented here.
+    """
+    import json  # noqa: PLC0415
+
+    path = Path("artifacts/business_impact.json")
+    if not path.exists():
+        return {
+            "available": False,
+            "total_protected_inr": None,
+            "monthly_protected_inr": None,
+            "fraud_amount_blocked_rate": None,
+            "fraud_events_blocked_rate": None,
+        }
+    try:
+        r = json.loads(path.read_text())
+    except Exception:  # noqa: BLE001
+        return {"available": False}
+    p = r.get("protection") or {}
+    total_fraud_inr = (r.get("totals") or {}).get("fraud_amount_inr")
+    caught_inr = p.get("fraud_amount_caught_inr")
+    return {
+        "available": True,
+        "total_protected_inr": caught_inr,
+        "monthly_protected_inr": p.get("per_month_protected_inr"),
+        "fraud_amount_blocked_rate": p.get("recall_by_amount"),
+        "fraud_events_blocked_rate": p.get("recall_by_count"),
+        "total_fraud_inr": total_fraud_inr,
+        "missed_inr": p.get("fraud_amount_missed_inr"),
+        "model": r.get("model"),
+        "split": r.get("split"),
+    }
+
+
 @app.post("/api/v1/razorpay/order", tags=["razorpay"])
 def razorpay_create_order(body: dict) -> dict:
     """Razorpay demo: create a test order (LIMITATION #2).
@@ -584,6 +627,68 @@ def razorpay_flow() -> dict:
     }
 
 
+@app.post("/api/v1/razorpay/webhook", tags=["razorpay"])
+def razorpay_webhook(body: dict) -> dict:
+    """Razorpay demo: receive a mock payment webhook and score it (sprint H0-1).
+
+    Accepts a Razorpay-style webhook payload:
+        {"order_id": "...", "payment_id": "...", "amount": 199900, "currency": "INR",
+         "customer": {"id": "..."}, "card": {"id": "..."}, "merchant": {"id": "..."},
+         "method": "card", "error_code": null}
+    Converts it to the internal PaymentEvent and runs the SAME scoring path as
+    live traffic (velocity -> cold-start check -> XGBoost -> SHAP -> security
+    action -> audit), returning the RiskDecision plus a security_action.
+
+    Rounded-off amount (paise) is converted to USD for the canonical event.
+    """
+    from fastapi import HTTPException  # noqa: PLC0415
+
+    try:
+        amount_paise = int(body.get("amount", 0))
+        amount_inr = amount_paise / 100.0
+        event = PaymentEvent(
+            transaction_id=str(body.get("payment_id") or body.get("order_id") or "webhook-txn"),
+            event_time=body.get("timestamp") or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            customer_id=str(body.get("customer", {}).get("id", "C-WEBHOOK-0001")),
+            card_id=str(body.get("card", {}).get("id", "K-WEBHOOK-0001")),
+            merchant_id=str(body.get("merchant", {}).get("id", "TerraMart-5311")),
+            merchant_category_code=body.get("mcc"),
+            amount=f"{amount_inr / 83.5:.2f}",
+            payment_channel=str(body.get("method", "card")),
+            payment_error=body.get("error_code"),
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=422, detail=f"invalid webhook: {exc}")
+
+    # Reuse the exact scoring + audit path by calling the shared helper.
+    decision = score_transaction(event)
+    # Re-derive security_action if the helper's decision already has it; else map.
+    decision.security_action = security_action(decision.action)  # type: ignore[assignment]
+    return {
+        "received": True,
+        "order_id": body.get("order_id"),
+        "payment_id": body.get("payment_id"),
+        "risk": {
+            "model_version": decision.model_version,
+            "fraud_probability": round(decision.fraud_probability, 6),
+            "decision": decision.action,
+            "security_action": decision.security_action,
+            "is_cold_start": decision.is_cold_start,
+            "reasons_human": decision.reasons_human,
+            "verdict": verdict(decision.action),
+        },
+        "webhook_to_merchant": (
+            "payment.captured" if decision.action == "allow"
+            else "payment.risk_flagged"
+        ),
+        "audit": {
+            "transaction_id": event.transaction_id,
+            "decision_auditable": True,
+            "processed_at": decision.processed_at,
+        },
+    }
+
+
 @app.post(
     "/api/v1/transactions/score",
     response_model=RiskDecision,
@@ -605,8 +710,53 @@ def score_transaction(event: PaymentEvent) -> RiskDecision:
             decision = _safe_review_decision(event)
             _audit("decision.review_failsafe", event, decision)
             return decision
+
+        # LIMITATION #4 — cold-start routing before the model: if the entity has
+        # no velocity history, the model's behavioural features are unknown, so
+        # we route to a conservative rule engine and flag is_cold_start=1.
+        try:
+            cold = is_cold_start(
+                velocity.get("cust_txn_count_prior"),
+                velocity.get("card_txn_count_prior"),
+                velocity.get("merch_txn_count_prior"),
+            )
+        except Exception:  # noqa: BLE001 - cold-start flag must never break score
+            cold = False
+
         try:
             values = event_feature_dict(event, velocity=velocity)
+        except Exception:  # noqa: BLE001
+            values = {}
+
+        if cold:
+            cs = cold_start_risk(
+                values,
+                merchant_prior=values.get("merch_fraud_rate_prior"),
+            )
+            decision = RiskDecision(
+                transaction_id=event.transaction_id,
+                model_version="cold-start-rules",
+                fraud_probability=float(cs["risk_score"]),
+                action=cs["action"],  # type: ignore[arg-type]
+                reasons=[
+                    RiskReason(
+                        feature="cold_start",
+                        direction="increases_risk",
+                        detail="low-history entity routed to conservative rule engine",
+                        human=r,
+                    )
+                    for r in cs["reasons"]
+                ],
+                is_model_ready=True,
+                is_cold_start=True,
+                security_action=security_action(cs["action"]),  # type: ignore[arg-type]
+                reasons_human=cs["reasons"],
+                processed_at=datetime.now(UTC).isoformat(),
+            )
+            _audit("decision.cold_start", event, decision)
+            return decision
+
+        try:
             result = score_event(
                 values,
                 feature_columns=list(_config()["feature_columns"]),
@@ -633,6 +783,9 @@ def score_transaction(event: PaymentEvent) -> RiskDecision:
             is_model_ready=True,
             processed_at=datetime.now(UTC).isoformat(),
         )
+        # LIMITATION #3 — product layer: concrete security action + readable reasons.
+        decision.security_action = security_action(decision.action)  # type: ignore[assignment]
+        decision.reasons_human = human_reasons(values)
         _apply_threshold_override(decision)  # Layer 5 healing: miss/false-hold
         _audit("decision.scored", event, decision)
         return decision
@@ -698,6 +851,15 @@ def _audit(event_type: str, event: PaymentEvent, decision: RiskDecision) -> None
                 "merchant_id": event.merchant_id,
                 "payment_channel": event.payment_channel,
                 "processed_at": decision.processed_at,
+                # Helix repair/hot-list needs the event context per episode.
+                "event": {
+                    "transaction_id": event.transaction_id,
+                    "customer_id": event.customer_id,
+                    "card_id": event.card_id,
+                    "merchant_id": event.merchant_id,
+                    "amount": str(event.amount),
+                    "payment_channel": event.payment_channel,
+                },
             },
         )
     except Exception:  # noqa: BLE001 - audit must never break scoring

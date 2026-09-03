@@ -274,3 +274,16 @@ input:focus, select:focus { border-color: var(--accent); }
 .demo-big b { letter-spacing: 0.05em; }
 .demo-reasons { margin: 8px 0 4px; padding-left: 18px; font-size: 0.76rem; color: var(--ink); }
 .demo-reasons li { margin: 3px 0; }
+
+/* ---- LIMITATION #3/#4 + sprint components ---- */
+.demo-sec { color: var(--pos); text-transform: uppercase; letter-spacing: 0.04em; }
+.demo-cold {
+  background: rgba(245, 158, 11, 0.12); color: var(--warn);
+  border: 1px solid var(--warn); border-radius: 999px;
+  font-size: 0.62rem; font-weight: 700; letter-spacing: 0.04em;
+  padding: 2px 8px; margin-left: 8px; vertical-align: middle;
+}
+.demo-webhook { margin-top: 18px; border-top: 1px dashed var(--line); padding-top: 10px; }
+.subhead { font-size: 0.82rem; color: var(--muted); margin: 0 0 6px; }
+.result-sec { margin: 6px 0 8px; font-size: 0.78rem; color: var(--ink); }
+.sec-ta { color: var(--pos); text-transform: uppercase; letter-spacing: 0.04em; }

@@ -10,8 +10,10 @@ import { useState } from "react";
 import {
   createDemoOrder,
   payDemoOrder,
+  sendRazorpayWebhook,
   type DemoOrder,
   type DemoWebhook,
+  type WebhookResponse,
 } from "../lib/api";
 
 const MERCHANTS = [
@@ -32,6 +34,8 @@ export default function RazorpayDemoPanel() {
   const [merchant, setMerchant] = useState(MERCHANTS[0].id);
   const [order, setOrder] = useState<DemoOrder | null>(null);
   const [hook, setHook] = useState<DemoWebhook | null>(null);
+  const [wh, setWh] = useState<WebhookResponse | null>(null);
+  const [whAmount, setWhAmount] = useState("199900"); // paise
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
@@ -58,6 +62,28 @@ export default function RazorpayDemoPanel() {
       setHook(h);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "pay failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function fireWebhook() {
+    setErr("");
+    setBusy(true);
+    try {
+      const r = await sendRazorpayWebhook({
+        order_id: `order_wh_${Date.now()}`,
+        payment_id: `pay_wh_${Date.now()}`,
+        amount: Number(whAmount) || 0,
+        currency: "INR",
+        customer: { id: "C-WH-9001" },
+        card: { id: "K-WH-9001" },
+        merchant: { id: merchant },
+        method: "card",
+      });
+      setWh(r);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "webhook failed");
     } finally {
       setBusy(false);
     }
@@ -128,8 +154,22 @@ export default function RazorpayDemoPanel() {
             </span>
           </div>
           <div className="muted small">
+            security action{" "}
+            <b className="demo-sec">{ra.security_action ?? "—"}</b>
+            {ra.is_cold_start ? (
+              <span className="pill demo-cold">COLD-START RULE ROUTE</span>
+            ) : null}
+          </div>
+          <div className="muted small">
             model {ra.model_version} · webhook {hook.event}
           </div>
+          {ra.reasons_human && ra.reasons_human.length > 0 && (
+            <ul className="demo-reasons">
+              {ra.reasons_human.map((r, i) => (
+                <li key={`h${i}`}>{r}</li>
+              ))}
+            </ul>
+          )}
           <ul className="demo-reasons">
             {ra.top_reasons.map((r, i) => (
               <li key={i}>
@@ -143,6 +183,54 @@ export default function RazorpayDemoPanel() {
           </div>
         </div>
       )}
+
+      <div className="demo-webhook">
+        <h3 className="subhead">…or simulate a payment webhook</h3>
+        <div className="demo-controls">
+          <label>
+            Amount (paise)
+            <input
+              type="text"
+              value={whAmount}
+              onChange={(e) => setWhAmount(e.target.value)}
+            />
+          </label>
+          <button onClick={fireWebhook} disabled={busy}>
+            {busy ? "…" : "Send webhook"}
+          </button>
+        </div>
+        {wh && (
+          <div className={`demo-verdict ${ACTION_TONE[wh.risk.decision] ?? ""}`}>
+            <div className="demo-big">
+              <b>{wh.risk.decision.toUpperCase()}</b>
+              <span className="muted">
+                {" "}
+                · risk {wh.risk.fraud_probability.toFixed(4)} ·{" "}
+                {wh.risk.verdict}
+              </span>
+            </div>
+            <div className="muted small">
+              model {wh.risk.model_version} · webhook-to-merchant{" "}
+              <b>{wh.webhook_to_merchant}</b> · security action{" "}
+              <b className="demo-sec">{wh.risk.security_action}</b>
+              {wh.risk.is_cold_start ? (
+                <span className="pill demo-cold">COLD-START RULE ROUTE</span>
+              ) : null}
+            </div>
+            {wh.risk.reasons_human && wh.risk.reasons_human.length > 0 && (
+              <ul className="demo-reasons">
+                {wh.risk.reasons_human.map((r, i) => (
+                  <li key={`w${i}`}>{r}</li>
+                ))}
+              </ul>
+            )}
+            <div className="muted small">
+              audited: {wh.audit.transaction_id} · decision auditable{" "}
+              {String(wh.audit.decision_auditable)}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

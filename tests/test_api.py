@@ -58,6 +58,8 @@ def test_score_passes_through_model_result(monkeypatch) -> None:
     from fingraph_sentinel.serving import ScoredReason, ScoreResult
 
     _set_model_ready(monkeypatch, True)
+    # warm entity so the model path (not cold-start rules) is exercised
+    monkeypatch.setattr("fingraph_sentinel.main.is_cold_start", lambda *a, **k: False)
 
     def fake_score(values, feature_columns, boilerplate_reasons=None):
         return ScoreResult(
@@ -87,6 +89,7 @@ def test_score_passes_through_model_result(monkeypatch) -> None:
 
 def test_score_fails_safe_when_scoring_errors(monkeypatch) -> None:
     _set_model_ready(monkeypatch, True)
+    monkeypatch.setattr("fingraph_sentinel.main.is_cold_start", lambda *a, **k: False)
 
     def broken_score(values, feature_columns, boilerplate_reasons=None):
         raise RuntimeError("boom")

@@ -31,6 +31,7 @@ import ModelRacePanel from "./components/ModelRacePanel";
 import ModelSwitcherPanel from "./components/ModelSwitcherPanel";
 import MetricsStrip from "./components/MetricsStrip";
 import BusinessImpactPanel from "./components/BusinessImpactPanel";
+import FinancialImpactCard from "./components/FinancialImpactCard";
 import RazorpayDemoPanel from "./components/RazorpayDemoPanel";
 
 const layers = [
@@ -104,6 +105,8 @@ export default function Home() {
       <MetricsStrip status={status} />
 
       <BusinessImpactPanel />
+
+      <FinancialImpactCard />
 
       <div className="pool">
         <section className="panel score-panel">

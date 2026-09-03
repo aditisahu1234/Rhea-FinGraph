@@ -117,11 +117,25 @@ export default function Scorer() {
             <div className="result-head">
               <h3>
                 Decision · <span className="muted">{decision.transaction_id}</span>
+                {decision.is_cold_start ? (
+                  <span className="pill demo-cold">COLD-START RULE ROUTE</span>
+                ) : null}
               </h3>
               <span className="muted">
                 {decision.model_version} ·{" "}
                 {decision.processed_at ? new Date(decision.processed_at).toLocaleTimeString() : ""}
               </span>
+            </div>
+            <div className="result-sec">
+              Security action:{" "}
+              <b className="sec-ta">{decision.security_action ?? "REVIEW"}</b>
+              {decision.reasons_human && decision.reasons_human.length > 0 ? (
+                <ul className="demo-reasons">
+                  {decision.reasons_human.map((r, i) => (
+                    <li key={`h${i}`}>{r}</li>
+                  ))}
+                </ul>
+              ) : null}
             </div>
             <ReasonsList reasons={decision.reasons} />
           </div>
