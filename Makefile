@@ -176,7 +176,13 @@ train-baseline-velocity:
 	OMP_NUM_THREADS=4 .venv/bin/python -m fingraph_sentinel.train_baseline --feature-set velocity --velocity-dir artifacts/data/velocity --out artifacts/models/baseline-online-v3
 
 promote-velocity:
-	OMP_NUM_THREADS=1 .venv/bin/python -c "import json, shutil, sys; from pathlib import Path; src=Path('artifacts/models/baseline-online-v3'); dst=Path('artifacts/models/baseline-online-xgb'); base=json.loads((dst/'model_config.json').read_text()); new=json.loads((src/'model_config.json').read_text()); val=float(new['metrics_validation']['roc_auc']); cur=float(base['metrics_validation']['roc_auc']); print(f'val ROC v3={val} vs current={cur}'); sys.exit(0 if val >= cur else 1) if val < cur else None; print('PROMOTING v3 -> serving'); [shutil.copyfile(src/f, dst/f) for f in ('model.json','model_config.json','merchant_fraud_priors.json','merchant_share.json','mcc_share.json')]; print('PROMOTED (backups: v2 files overwritten; history kept in docs/METRICS.md)')"
+	.venv/bin/python scripts/evaluate_promote.py
+
+promote-velocity-full:
+	.venv/bin/python scripts/evaluate_promote.py --commit && \
+	git add artifacts/models/baseline-online-xgb && \
+	git commit -m "promote velocity v3 -> serving (val ROC gate passed)" && \
+	git push origin main
 
 repair-gate-sim:
 	OMP_NUM_THREADS=2 .venv/bin/python scripts/repair_gate_sim.py
