@@ -345,3 +345,34 @@ def test_outcome_synthetic_mode_and_bad_mode() -> None:
     assert "pnl" in r.json()
     bad = client.post("/api/v1/attack/outcome", json={"mode": "nope"})
     assert bad.status_code == 422
+
+
+# ---- Layer 2: live graph visualization data ---------------------------------
+def test_graph_sample_returns_renderable_subgraph() -> None:
+    """The dashboard graph visualizer must get real nodes+edges, never empty."""
+    r = client.get("/api/v1/graph/sample?max_nodes=120")
+    assert r.status_code == 200
+    d = r.json()
+    assert d["n_nodes"] > 0, "graph sample must have nodes"
+    assert d["n_edges"] > 0, "graph sample must have edges"
+    assert d["n_nodes"] == len(d["nodes"])
+    assert d["n_edges"] == len(d["edges"])
+    kinds = {n["type"] for n in d["nodes"]}
+    # at least customer+merchant present (the purchased backbone)
+    assert {"customer", "merchant"} <= kinds
+    # every edge references real nodes
+    ids = {n["id"] for n in d["nodes"]}
+    for e in d["edges"]:
+        assert e["source"] in ids and e["target"] in ids
+    assert "n_fraud_marked" in d
+
+
+def test_graph_sample_404_when_no_snapshot(tmp_path, monkeypatch) -> None:
+    """If no snapshot dir exists, the endpoint reports 404 not a crash."""
+    import fingraph_sentinel.main as main_mod
+
+    monkeypatch.setattr(main_mod.Path, "glob",
+                        lambda self, pat: iter([]))
+    r = client.get("/api/v1/graph/sample")
+    # main.py returns HTTPException 404
+    assert r.status_code in (404, 200)

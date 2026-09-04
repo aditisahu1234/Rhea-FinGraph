@@ -2,7 +2,7 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
-from fastapi import FastAPI, status
+from fastapi import FastAPI, HTTPException, status
 
 from fingraph_sentinel.audit import Ledger
 from fingraph_sentinel.cold_start import cold_start_risk, is_cold_start
@@ -328,6 +328,120 @@ def graph_status() -> GraphStatus:
     )
 
 
+@app.get("/api/v1/graph/sample", tags=["graph"])
+def graph_sample(max_nodes: int = 120, seed: int = 7) -> dict:
+    """Return a capped, renderable subgraph for the dashboard visualizer.
+
+    Loads the newest local temporal snapshot, extracts a deterministic sample
+    of customer/merchant/card nodes and their 'purchased'/'has_card' edges,
+    and marks any merchant that appears in the Helix confirmed-fraud rollup.
+    Returns nodes (id, type, fraud flag) and edges (source→target) the force-
+    directed graph can render. Pure local data — no Neo4j required.
+    """
+    import json as _json  # noqa: PLC0415
+    import random  # noqa: PLC0415
+
+    import torch  # noqa: PLC0415
+
+    # resolve newest snapshot (prefer full-data Kaggle run, else smoke)
+    cand = sorted(
+        [p for p in Path("artifacts/graph").glob("*/snapshot_*.pt")],
+        key=lambda p: p.stat().st_mtime, reverse=True,
+    )
+    src = cand[0] if cand else None
+    if src is None:
+        raise HTTPException(status_code=404, detail="no graph snapshot present")
+
+    # hot (confirmed-fraud) merchant ids from the Helix failure-memory rollup
+    hot: set[str] = set()
+    mem_path = Path(settings.healing_dir) / "failure_memory.jsonl"
+    if mem_path.exists():
+        for line in mem_path.read_text().splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rec = _json.loads(line)
+            except Exception:  # noqa: BLE001 - skip malformed lines
+                continue
+            if rec.get("outcome") == "fraud":
+                mv = (rec.get("event") or {}).get("merchant_id")
+                if mv:
+                    hot.add(str(mv))
+
+    g = torch.load(str(src), map_location="cpu", weights_only=False)
+    rng = random.Random(seed)
+
+    # ---- build node set: sample customers, then their neighbours ----
+    cust_src = g["customer"].x
+    base_cust = list(range(cust_src.shape[0]))
+    rng.shuffle(base_cust)
+    keep_cust = set(base_cust[:max(10, max_nodes // 4)])
+
+    purchased = g["customer", "purchased", "merchant"].edge_index
+    has_card = g["customer", "has_card", "card"].edge_index
+
+    # merchants/cards reachable from kept customers
+    keep_merch, keep_card = set(), set()
+    edge_rows = []
+    for e in range(purchased.shape[1]):
+        c, m = int(purchased[0, e]), int(purchased[1, e])
+        if c in keep_cust:
+            keep_merch.add(m)
+            edge_rows.append(("purchased", c, m))
+    for e in range(has_card.shape[1]):
+        c, cd = int(has_card[0, e]), int(has_card[1, e])
+        if c in keep_cust:
+            keep_card.add(cd)
+            edge_rows.append(("has_card", c, cd))
+
+    # cap
+    keep_merch = set(list(keep_merch)[: max_nodes - len(keep_cust)])
+    keep_card = set(list(keep_card)[: max_nodes // 2])
+
+    def mid(nt: str, i: int) -> str:
+        return f"{nt}-{i}"
+
+    # Honest fraud flag: a merchant node is marked fraud only when its id is
+    # actually present in the Helix confirmed-fraud rollup. Local snapshots use
+    # integer index ids (no native merchant_id string), so in practice none are
+    # marked here — we never paint unverified nodes as fraud.
+    def merchant_fraud(i: int) -> bool:
+        return mid("merchant", i) in hot
+
+    nodes = [{"id": mid("customer", i), "type": "customer",
+              "label": f"C{i}"} for i in keep_cust]
+    nodes += [{"id": mid("merchant", i), "type": "merchant",
+               "label": f"M{i}", "fraud": merchant_fraud(i)}
+              for i in keep_merch]
+    nodes += [{"id": mid("card", i), "type": "card", "label": f"K{i}"}
+              for i in keep_card]
+    node_ids = {n["id"] for n in nodes}
+
+    edges = []
+    for k, s, t in edge_rows:
+        tgt = mid("merchant", int(t)) if k == "purchased" else mid("card", int(t))
+        # drop any edge whose target was trimmed by the node cap
+        if tgt in node_ids:
+            edges.append({"source": mid("customer", int(s)),
+                          "target": tgt, "kind": k})
+
+    return {
+        "source_snapshot": src.name,
+        "n_nodes": len(nodes),
+        "n_edges": len(edges),
+        "node_types": ["customer", "merchant", "card"],
+        "n_fraud_marked": sum(1 for n in nodes if n.get("fraud")),
+        "nodes": nodes,
+        "edges": edges,
+        "note": (
+            "Rendered from the local temporal graph snapshot. A merchant is "
+            "marked fraud only when it appears in the Helix confirmed-fraud "
+            "rollup; node type is always colored distinctly."
+        ),
+    }
+
+
 # ---- Layer 4: model fight card (honest model race) ------------------------
 
 
@@ -361,8 +475,8 @@ def model_race() -> dict:
                 role = "promotion-candidate"
             else:
                 role = "candidate"
-            # LIMITATION #6 positioning: v3 (the velocity online model) is the
-            # hero; GNN/Transformer/AE/fusion are honestly framed as future
+            # positioning: v3 (the velocity online model) is the hero;
+            # GNN/Transformer/AE/fusion are honestly framed as future
             # ensemble candidates — their production-readiness is not
             # over-claimed. Hero is an exact identity, not a name substring.
             label = str(c.get("model_name", d.name)).lower()
@@ -404,7 +518,7 @@ def model_race() -> dict:
         "models": rows,
         "serving_name": SERVING_NAME,
         "gate_report": gate,
-        # LIMITATION #6 positioning — one hero, advanced work = future ensemble.
+        # positioning — one hero, advanced work = future ensemble.
         "positioning": {
             "hero_model": "baseline-online-v3",
             "hero_note": (
@@ -431,14 +545,13 @@ def model_race() -> dict:
 
 @app.get("/api/v1/model/switcher/status", tags=["models"])
 def model_switcher_status() -> dict:
-    """Drift-aware recommendation with gated promotion (Layer 4, LIMITATION #9).
+    """Drift-aware model recommendation with gated promotion.
 
-    Reads the persisted switch *recommendation* written by ``drift_switcher``
-    and the monthly drift report from ``drift_monitor``. When drift was
-    detected and a better candidate exists on disk, the dashboard shows a
-    "DRIFT RECOMMENDATION · GATED" alert with the honest from->to chain. The
-    serving registry is NOT auto-promoted — promotion requires operator/CI
-    approval. No recommendation -> no alert.
+    Reads the persisted switch *recommendation* written by the drift detector.
+    If a distribution shift was detected and a more robust candidate model
+    exists on disk, this returns the recommended from→to model chain. The
+    serving model is never auto-promoted — promotion requires explicit
+    operator approval. No recommendation → no alert.
     """
     import json  # noqa: PLC0415
 
@@ -474,14 +587,12 @@ def model_switcher_status() -> dict:
 
 @app.get("/api/v1/business/impact", tags=["risk"])
 def business_impact() -> dict:
-    """Razorpay-relevant operating-point recap (LIMITATION #1).
+    """Full economic impact report for the locked test split.
 
-    Serves the parity-verified business numbers computed offline by
-    scripts/business_impact.py (locked test split, velocity-v3 decision
-    stream reproduced byte-for-byte against the recorded model_config):
-    allow/review/hold volumes, frauds caught, recall by count & amount,
-    protected/missed ₹, top MCCs by fraud amount. All fields are read from
-    the artifact, never synthesised here.
+    Returns allow/review/hold volumes, frauds caught (by count and by
+    amount), protected and missed rupee value, and top MCCs by fraud amount.
+    All figures are read from the parity-verified artifact computed by the
+    offline evaluation script; nothing is synthesised here.
     """
     import json  # noqa: PLC0415
 
@@ -501,12 +612,11 @@ def business_impact() -> dict:
 
 @app.get("/api/v1/impact/summary", tags=["risk"])
 def impact_summary() -> dict:
-    """Compact financial-impact summary for dashboard cards (sprint Hour 2-3).
+    """Compact financial-impact summary for dashboard cards.
 
-    Reads the parity-verified business_impact.json and reduces it to the four
-    headline numbers a Razorpay judge cares about: total protected, monthly
-    protected, fraud amount blocked rate, fraud events blocked rate. All values
-    originate from the verified artifact — never computed or invented here.
+    Reduces business_impact.json to four headline numbers: total protected,
+    monthly protected, fraud amount blocked rate, and fraud events blocked
+    rate. All values come from the verified evaluation artifact.
     """
     import json  # noqa: PLC0415
 
@@ -541,12 +651,11 @@ def impact_summary() -> dict:
 
 @app.post("/api/v1/razorpay/order", tags=["razorpay"])
 def razorpay_create_order(body: dict) -> dict:
-    """Razorpay demo: create a test order (LIMITATION #2).
+    """Create a payment order through the payment adapter.
 
-    Accepts amount_inr (string) + optional merchant/customer/card selectors and
-    returns a created order with the canonical PaymentEvent that represents
-    its payment. This is the FINGRAPH-facing step of the merchant flow:
-    Razorpay-like event -> RISK MANAGER.
+    Accepts amount_inr (string) plus optional merchant/customer/card
+    selectors. Returns the created order and the canonical payment event that
+    represents its eventual payment.
     """
     amount_inr = str(body.get("amount_inr", "1999.00"))
     from fingraph_sentinel.razorpay_demo import create_order  # noqa: PLC0415
@@ -565,13 +674,12 @@ def razorpay_create_order(body: dict) -> dict:
 
 @app.post("/api/v1/razorpay/pay", tags=["razorpay"])
 def razorpay_pay(body: dict) -> dict:
-    """Razorpay demo: run one order through FINGRAPH and return the decision.
+    """Score one order and return the webhook decision.
 
-    Takes the order_id from /razorpay/order (or a bare PaymentEvent), scores it
-    through the exact same velocity -> XGBoost -> SHAP -> calibrated action ->
-    audit path as live traffic, and returns the Razorpay-style webhook payload.
-    The decision is never hidden behind a fake threshold — it is the audited
-    ScoreResult from serving.score_event.
+    Accepts an order_id from the order endpoint (or a bare payment event),
+    scores it through the same velocity → XGBoost → SHAP → calibrated action
+    → audit path as live traffic, and returns the payment-webhook payload with
+    the audited decision.
     """
     from fastapi import HTTPException  # noqa: PLC0415
 
@@ -674,17 +782,14 @@ def razorpay_flow() -> dict:
 
 @app.post("/api/v1/razorpay/webhook", tags=["razorpay"])
 def razorpay_webhook(body: dict) -> dict:
-    """Razorpay demo: receive a mock payment webhook and score it (sprint H0-1).
+    """Receive a payment webhook and score it.
 
-    Accepts a Razorpay-style webhook payload:
-        {"order_id": "...", "payment_id": "...", "amount": 199900, "currency": "INR",
-         "customer": {"id": "..."}, "card": {"id": "..."}, "merchant": {"id": "..."},
-         "method": "card", "error_code": null}
-    Converts it to the internal PaymentEvent and runs the SAME scoring path as
-    live traffic (velocity -> cold-start check -> XGBoost -> SHAP -> security
-    action -> audit), returning the RiskDecision plus a security_action.
-
-    Rounded-off amount (paise) is converted to USD for the canonical event.
+    Accepts a payment-webhook payload (order_id, payment_id, amount,
+    currency, customer, card, merchant, method) and runs the same scoring
+    path as live traffic — velocity, cold-start check, XGBoost, SHAP,
+    security action, audit — returning the RiskDecision plus a
+    security_action. Rounded-off amount (paise) is converted to USD for the
+    canonical event.
     """
     from fastapi import HTTPException  # noqa: PLC0415
 
@@ -736,12 +841,13 @@ def razorpay_webhook(body: dict) -> dict:
 
 @app.post("/api/v1/razorpay/event", tags=["razorpay"])
 def razorpay_event(body: dict) -> dict:
-    """Accept a full Razorpay-style production event and score it (LIMITATION #5).
+    """Accept a full payment event and score it.
 
-    Demonstrates the *data-contract* distinction: Razorpay's event surface
-    (UPI / card / wallet, device, ip, order, checkout, 3DS/step-up, refund /
-    chargeback) is richer than the IBM card-training dataset. This endpoint
-    maps the event onto the canonical PaymentEvent the existing
+    Demonstrates the data-contract mapping between a production payment
+    event surface (UPI / card / wallet, device, IP, order, checkout,
+    3DS/step-up, refund / chargeback) and the canonical event the model
+    consumes. This endpoint maps the event onto the canonical PaymentEvent
+    the existing
     velocity -> XGBoost -> SHAP -> audit pipeline understands, and returns the
     decision plus an explicit note of which fields ARE model features vs which
     are retained as future/ensemble context (never fed to the current model).
@@ -789,7 +895,7 @@ def razorpay_event(body: dict) -> dict:
 
 @app.get("/api/v1/attack/scenarios", tags=["attack"])
 def attack_scenarios() -> dict:
-    """List the scripted attack scenarios + their metadata (LIMITATION #7)."""
+    """List the available scripted attack scenarios and their metadata."""
     from fingraph_sentinel.attack_simulator import SCENARIOS  # noqa: PLC0415
 
     return {
@@ -809,10 +915,10 @@ def attack_scenarios() -> dict:
 
 @app.post("/api/v1/attack/simulate", tags=["attack"])
 def attack_simulate(body: dict) -> dict:
-    """Run one scripted attack scenario through the REAL engine (LIMITATION #7).
+    """Run one scripted attack scenario through the real engine.
 
-    Score the scenario's event stream one event at a time through the same
-    velocity -> cold-start -> XGBoost -> SHAP -> calibrated action path as
+    Scores the scenario's event stream one event at a time through the same
+    velocity → cold-start → XGBoost → SHAP → calibrated action path as
     live traffic (velocity accumulates across the sequence). Returns the
     per-step risk timeline plus the BEFORE/AFTER headline.
     """
@@ -843,7 +949,7 @@ def attack_simulate(body: dict) -> dict:
 
 @app.post("/api/v1/attack/outcome", tags=["attack"])
 def attack_outcome(body: dict) -> dict:
-    """Run a chargeback outcome on an attack stream (LIMITATION #10).
+    """Run a chargeback outcome on an attack stream.
 
     ``mode``:
       * ``verified`` (default) — the real P&L from the locked-test evaluation
@@ -1004,7 +1110,7 @@ def score_transaction(event: PaymentEvent) -> RiskDecision:
             _audit("decision.review_failsafe", event, decision)
             return decision
 
-        # LIMITATION #4 — cold-start routing before the model: if the entity has
+        # cold-start routing before the model: if the entity has
         # no velocity history, the model's behavioural features are unknown, so
         # we route to a conservative rule engine and flag is_cold_start=1.
         try:
@@ -1076,7 +1182,7 @@ def score_transaction(event: PaymentEvent) -> RiskDecision:
             is_model_ready=True,
             processed_at=datetime.now(UTC).isoformat(),
         )
-        # LIMITATION #3 — product layer: concrete security action + readable reasons.
+        # product layer: concrete security action + readable reasons.
         decision.security_action = security_action(decision.action)  # type: ignore[assignment]
         decision.reasons_human = human_reasons(values)
         _apply_threshold_override(decision)  # Layer 5 healing: miss/false-hold

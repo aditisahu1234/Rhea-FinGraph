@@ -722,3 +722,35 @@ export async function runAttackOutcome(payload: Record<string, unknown>): Promis
   if (!res.ok) throw new Error(`attack/outcome -> ${res.status}`);
   return (await res.json()) as AttackOutcome;
 }
+
+// ---- Graph visualization sample (LIMITATION Layer 2) ----------------------
+export interface GraphSampleNode {
+  id: string;
+  type: "customer" | "merchant" | "card";
+  label: string;
+  fraud?: boolean;
+}
+
+export interface GraphSampleEdge {
+  source: string;
+  target: string;
+  kind: "purchased" | "has_card";
+}
+
+export interface GraphSample {
+  source_snapshot: string;
+  n_nodes: number;
+  n_edges: number;
+  node_types: string[];
+  n_fraud_marked: number;
+  nodes: GraphSampleNode[];
+  edges: GraphSampleEdge[];
+  note: string;
+}
+
+export async function fetchGraphSample(
+  maxNodes?: number
+): Promise<GraphSample> {
+  const q = maxNodes ? `?max_nodes=${maxNodes}` : "";
+  return getJSON<GraphSample>(`/api/v1/graph/sample${q}`);
+}

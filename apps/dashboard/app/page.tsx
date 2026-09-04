@@ -102,6 +102,13 @@ export default function Home() {
           />
           {apiUp === false ? "API offline" : "API online"}
         </div>
+        <a
+          href="/api-console"
+          className="pill"
+          style={{ textDecoration: "none", marginLeft: 12 }}
+        >
+          API Console →
+        </a>
       </header>
 
       <MetricsStrip status={status} />

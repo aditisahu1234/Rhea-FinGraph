@@ -7,6 +7,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { fetchGraphStatus, type GraphStatus } from "../lib/api";
+import GraphViz from "./GraphViz";
 
 function fmt(n: number | null): string {
   if (n == null) return "—";
@@ -164,6 +165,14 @@ export default function GraphPanel() {
           )}
         </>
       )}
+
+      <div className="graph-viz-wrap" style={{ marginTop: "14px" }}>
+        <div className="trend-label">
+          <span>live customer ↔ merchant ↔ card graph</span>
+          <span className="muted">click a node to inspect · drag forces resolved live</span>
+        </div>
+        <GraphViz />
+      </div>
 
       <div className={`neo4j-card ${neo4j?.reachable ? "ok" : "off"}`}>
         <span className="neo4j-title">
