@@ -754,3 +754,45 @@ export async function fetchGraphSample(
   const q = maxNodes ? `?max_nodes=${maxNodes}` : "";
   return getJSON<GraphSample>(`/api/v1/graph/sample${q}`);
 }
+
+// ---- Live Neo4j Cypher gateway -------------------------------------------
+export interface CypherNode {
+  id: string;
+  type: string;
+  label: string;
+  fraud?: boolean;
+}
+export interface CypherEdge {
+  source: string;
+  target: string;
+  kind: string;
+  is_fraud?: boolean;
+}
+export interface CypherResult {
+  online: boolean;
+  query: string;
+  label: string;
+  source: string;
+  n_nodes: number;
+  n_edges: number;
+  nodes: CypherNode[];
+  edges: CypherEdge[];
+  cypher?: string;
+  detail?: string;
+  hint?: string;
+}
+export async function runGraphCypher(
+  query: string,
+  limit?: number
+): Promise<CypherResult> {
+  const res = await fetch(`${API_BASE}/api/v1/graph/cypher`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query, limit: limit ?? 100 }),
+  });
+  if (!res.ok) {
+    const t = await res.text();
+    throw new Error(`${res.status}: ${t}`);
+  }
+  return res.json();
+}

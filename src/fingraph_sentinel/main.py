@@ -442,6 +442,168 @@ def graph_sample(max_nodes: int = 120, seed: int = 7) -> dict:
     }
 
 
+# ---------------------------------------------------------------------------
+# Live Neo4j Cypher gateway (safe, whitelisted queries only)
+# ---------------------------------------------------------------------------
+
+# Whitelisted store of live Cypher queries. We never accept arbitrary user
+# strings — only these static queries, so the proxy is read-only and safe.
+CYPHER_QUERIES: dict[str, dict[str, str]] = {
+    "overview": {
+        "label": "Connected web (merchants a customer has purchased from)",
+        "cypher": """
+            MATCH (c:Customer)-[:PURCHASED]->(m:Merchant)
+            WITH c, m
+            LIMIT 40
+            RETURN id(c) AS sid, c.id AS customer_id, c.id AS source_id,
+                   'customer' AS stype,
+                   id(m) AS tid, m.id AS merchant_id, 'merchant' AS ttype,
+                   m.mcc_code AS mcc, COALESCE(m.fraud_rate, 0) AS fraud_rate
+        """,
+    },
+    "hot_merchants": {
+        "label": "Highest fraud-rate merchants and their customers",
+        "cypher": """
+            MATCH (c:Customer)-[:PURCHASED]->(m:Merchant)
+            WHERE m.fraud_rate > 0.05
+            WITH c, m
+            LIMIT 60
+            RETURN id(c) AS sid, c.id AS customer_id, 'customer' AS stype,
+                   id(m) AS tid, m.id AS merchant_id, 'merchant' AS ttype,
+                   m.mcc_code AS mcc, m.fraud_rate AS fraud_rate
+        """,
+    },
+    "cards_of_customers": {
+        "label": "Customers and the cards they hold",
+        "cypher": """
+            MATCH (c:Customer)-[:HAS_CARD]->(ca:Card)
+            LIMIT 40
+            RETURN id(c) AS sid, c.id AS customer_id, 'customer' AS stype,
+                   id(ca) AS tid, ca.id AS card_id, 'card' AS ttype,
+                   0 AS mcc, 0 AS fraud_rate
+        """,
+    },
+    "fraud_edges": {
+        "label": "Confirmed-fraud purchase edges",
+        "cypher": """
+            MATCH (c:Customer)-[r:PURCHASED {is_fraud: true}]->(m:Merchant)
+            LIMIT 50
+            RETURN id(c) AS sid, c.id AS customer_id, 'customer' AS stype,
+                   id(m) AS tid, m.id AS merchant_id, 'merchant' AS ttype,
+                   m.mcc_code AS mcc, COALESCE(m.fraud_rate, 0) AS fraud_rate
+        """,
+    },
+}
+
+
+@app.post("/api/v1/graph/cypher", tags=["graph"])
+def graph_cypher(body: dict) -> dict:
+    """Run one whitelisted live Cypher query against Neo4j.
+
+    Accepts ``query`` (one of the static keys defined here — arbitrary Cypher
+    is never accepted for safety) and returns a renderable node/edge list.
+    Responds 503 with a clear "offline" note when the Neo4j driver is not
+    installed or no server is listening; the dashboard shows that honestly.
+    """
+    from fastapi import HTTPException  # noqa: PLC0415
+
+    key = str(body.get("query", "")).strip()
+    spec = CYPHER_QUERIES.get(key)
+    if spec is None:
+        raise HTTPException(
+            status_code=422,
+            detail=f"unknown query '{key}'; choose from {sorted(CYPHER_QUERIES)}",
+        )
+    limit = int(body.get("limit", 100))
+    try:
+        from neo4j import GraphDatabase  # noqa: PLC0415
+    except Exception as exc:  # noqa: BLE001 - driver not installed
+        return _live_query_offline(f"neo4j driver not installed ({exc})")
+
+    driver = None
+    try:
+        driver = GraphDatabase.driver(
+            settings.neo4j_url,
+            auth=(settings.neo4j_username, settings.neo4j_password),
+            connection_timeout=2.0,
+        )
+        driver.verify_connectivity()
+    except Exception as exc:  # noqa: BLE001 - server down / bad auth
+        _close_driver(driver)
+        return _live_query_offline(f"{type(exc).__name__}: {exc}")
+
+    try:
+        with driver.session() as session:
+            rows = session.run(spec["cypher"], limit=limit).data()
+    except Exception as exc:  # noqa: BLE001 - query executed but failed
+        _close_driver(driver)
+        return _live_query_offline(f"query failed: {exc}")
+    _close_driver(driver)
+
+    # Build renderable nodes/edges (dedup by id)
+    nodes: dict[str, dict] = {}
+    edges: list[dict] = []
+    for r in rows:
+        def _add(sid: str, stype: str, label: str, fraud_rate: float) -> None:
+            nid = f"{stype}-{sid}"
+            if nid not in nodes:
+                nodes[nid] = {
+                    "id": nid, "type": stype, "label": label,
+                    "fraud": bool(fraud_rate and float(fraud_rate) > 0.05),
+                }
+        _add(str(r.get("sid")), str(r.get("stype", "customer")),
+             str(r.get("customer_id") or r.get("source_id") or r.get("sid")),
+             float(r.get("fraud_rate") or 0.0))
+        _add(str(r.get("tid")), str(r.get("ttype", "merchant")),
+             str(r.get("merchant_id") or r.get("card_id") or r.get("tid")),
+             float(r.get("fraud_rate") or 0.0))
+        edges.append({
+            "source": f"{r.get('stype', 'customer')}-{r.get('sid')}",
+            "target": f"{r.get('ttype', 'merchant')}-{r.get('tid')}",
+            "kind": "purchased",
+            "is_fraud": bool(r.get("is_fraud")),
+        })
+    # keep only edges whose endpoints we kept
+    kept = {n["id"] for n in nodes.values()}
+    edges = [e for e in edges if e["source"] in kept and e["target"] in kept]
+
+    return {
+        "online": True,
+        "query": key,
+        "label": spec["label"],
+        "source": "neo4j",
+        "n_nodes": len(nodes),
+        "n_edges": len(edges),
+        "nodes": list(nodes.values())[:120],
+        "edges": edges[:200],
+        "cypher": spec["cypher"],
+    }
+
+
+def _close_driver(driver) -> None:
+    if driver is not None:
+        try:
+            driver.close()
+        except Exception:  # noqa: BLE001 - best-effort close
+            pass
+
+
+def _live_query_offline(detail: str) -> dict:
+    return {
+        "online": False,
+        "source": "neo4j",
+        "detail": detail,
+        "nodes": [],
+        "edges": [],
+        "n_nodes": 0,
+        "n_edges": 0,
+        "hint": (
+            "Start Neo4j (brew start / neo4j start) then run 'make ingest-graph' "
+            "to load the fraud graph; this panel goes live automatically."
+        ),
+    }
+
+
 # ---- Layer 4: model fight card (honest model race) ------------------------
 
 

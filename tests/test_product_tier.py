@@ -376,3 +376,21 @@ def test_graph_sample_404_when_no_snapshot(tmp_path, monkeypatch) -> None:
     r = client.get("/api/v1/graph/sample")
     # main.py returns HTTPException 404
     assert r.status_code in (404, 200)
+
+
+# ---- Live Neo4j Cypher gateway ---------------------------------------------
+def test_cypher_gateway_rejects_unknown_query() -> None:
+    """Arbitrary/unknown Cypher must never be accepted (read-only safety)."""
+    r = client.post("/api/v1/graph/cypher", json={"query": "MATCH (n) DETACH DELETE n"})
+    assert r.status_code == 422
+    r2 = client.post("/api/v1/graph/cypher", json={"query": "DROP CONSTRAINTS"})
+    assert r2.status_code == 422
+
+
+def test_cypher_gateway_valid_query_handles_offline() -> None:
+    """With no Neo4j up the gateway returns a clean offline payload, not a crash."""
+    r = client.post("/api/v1/graph/cypher", json={"query": "overview"})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["online"] is False
+    assert "hint" in d and "nodes" in d and "edges" in d

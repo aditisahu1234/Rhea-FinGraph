@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { fetchGraphStatus, type GraphStatus } from "../lib/api";
 import GraphViz from "./GraphViz";
+import Neo4jLivePanel from "./Neo4jLivePanel";
 
 function fmt(n: number | null): string {
   if (n == null) return "—";
@@ -169,9 +170,17 @@ export default function GraphPanel() {
       <div className="graph-viz-wrap" style={{ marginTop: "14px" }}>
         <div className="trend-label">
           <span>live customer ↔ merchant ↔ card graph</span>
-          <span className="muted">click a node to inspect · drag forces resolved live</span>
+          <span className="muted">local snapshot · click a node to inspect</span>
         </div>
         <GraphViz />
+      </div>
+
+      <div style={{ marginTop: "18px" }}>
+        <div className="trend-label">
+          <span>live Neo4j · Cypher queries</span>
+          <span className="muted">{neo4j?.reachable ? "bolt endpoint up — data served from Neo4j" : "offline until Neo4j starts"}</span>
+        </div>
+        <Neo4jLivePanel />
       </div>
 
       <div className={`neo4j-card ${neo4j?.reachable ? "ok" : "off"}`}>
@@ -180,8 +189,8 @@ export default function GraphPanel() {
         </span>
         <span className="muted">
           {neo4j?.reachable
-            ? `${neo4j.url} — live graph queries available.`
-            : `bolt://localhost:7687 refused — expected offline. Start Neo4j and run "make ingest-graph" to load the 24.39M-edge graph, then this card flips online and live Cypher becomes available.`}
+            ? `${neo4j.url} — live graph queries available above.`
+            : `bolt://localhost:7687 refused — expected offline. Start Neo4j and run "make ingest-graph" to load the 24.39M-edge graph, then the console above goes live.`}
         </span>
       </div>
     </div>
