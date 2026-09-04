@@ -92,8 +92,8 @@ const ENDPOINTS: Endpoint[] = [
       { key: "customer_id", label: "Customer ID", type: "text", placeholder: "C-Mock0001" },
     ],
     confirm: (r) => {
-      const d = r as { decision?: { action?: string } };
-      return `✔ Webhook received and scored — decision: ${d?.decision?.action ?? "see body"}.`;
+      const d = r as { risk?: { decision?: string; security_action?: string } };
+      return `✔ Webhook received and scored — decision: ${d?.risk?.decision ?? "see body"} (${d?.risk?.security_action ?? "…"}).`;
     },
   },
   {
@@ -131,9 +131,9 @@ const ENDPOINTS: Endpoint[] = [
       { key: "scenario", label: "Scenario (synthetic only)", type: "select", options: ["", "NORMAL", "VELOCITY_ATTACK", "AMOUNT_SPIKE", "MERCHANT_ANOMALY", "NEW_CUSTOMER"], default: "" },
     ],
     confirm: (r) => {
-      const d = r as { prevented_inr?: number; missed_inr?: number; mode?: string };
+      const d = r as { fraud_prevented_value?: number; missed_fraud_value?: number; mode?: string };
       if (d.mode === "verified") {
-        return `✔ Verified P&L — fraud prevented ₹${Number(d.prevented_inr ?? 0).toLocaleString("en-IN")}, missed chargeback ₹${Number(d.missed_inr ?? 0).toLocaleString("en-IN")}.`;
+        return `✔ Verified P&L — fraud prevented ₹${Number(d.fraud_prevented_value ?? 0).toLocaleString("en-IN")}, missed chargeback ₹${Number(d.missed_fraud_value ?? 0).toLocaleString("en-IN")}.`;
       }
       return `✔ Synthetic outcome computed (see body for per-event P&L).`;
     },
