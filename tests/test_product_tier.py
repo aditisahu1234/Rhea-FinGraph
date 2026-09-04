@@ -394,3 +394,76 @@ def test_cypher_gateway_valid_query_handles_offline() -> None:
     d = r.json()
     assert d["online"] is False
     assert "hint" in d and "nodes" in d and "edges" in d
+
+
+# ---- Helix Runtime: Gene Map + PCEC engine ---------------------------------
+def test_gene_map_rl_q_value_learning(tmp_path) -> None:
+    """Q-value must rise on success and fall on failure (real RL), persisted."""
+    from fingraph_sentinel.helix_runtime.gene_map import GeneMap
+
+    gm = GeneMap(tmp_path / "genes.db")
+    gm.update_gene("sig_a", {"action": "retry", "timeout": 30}, True)
+    gm.update_gene("sig_a", {"action": "retry", "timeout": 30}, True)
+    gm.update_gene("sig_a", {"action": "retry", "timeout": 30}, False)
+    g = gm.get_repair("sig_a")
+    assert g is not None
+    assert g.success_count == 2 and g.failure_count == 1
+    assert g.q_value > 0  # +1,+1,-0.5 blended => positive
+    assert gm.count() == 1
+    # reload from disk (durable)
+    gm2 = GeneMap(tmp_path / "genes.db")
+    assert gm2.get_repair("sig_a") is not None
+
+
+def test_pcec_engine_heals_flaky_and_stores_gene(tmp_path) -> None:
+    """PCEC must repair a flaky op and persist the winning strategy as a gene."""
+    from fingraph_sentinel.helix_runtime.gene_map import GeneMap
+    from fingraph_sentinel.helix_runtime.pcec_engine import PCECEngine
+
+    gm = GeneMap(tmp_path / "genes.db")
+    eng = PCECEngine(gm, max_attempts=3)
+    calls = {"n": 0}
+
+    def flaky() -> dict:
+        calls["n"] += 1
+        if calls["n"] < 2:
+            raise TimeoutError("operation timed out waiting (504)")
+        return {"decision": "allow", "ok": True}
+
+    result = eng.heal(flaky)
+    assert result["ok"] is True
+    stats = eng.stats()
+    assert stats["recovery_rate"] == 1.0
+    assert stats["gene_count"] >= 1
+    # the timeout gene got stored and is retrievable
+    assert len(eng.history()) >= 1
+
+
+def test_pcec_exhausts_and_raises_on_unrecoverable(tmp_path) -> None:
+    """An unrecoverable error must exhaust attempts and raise, not hang."""
+    from fingraph_sentinel.helix_runtime.gene_map import GeneMap
+    from fingraph_sentinel.helix_runtime.pcec_engine import PCECEngine
+
+    eng = PCECEngine(GeneMap(tmp_path / "genes.db"), max_attempts=2)
+
+    def bad() -> dict:
+        raise ConnectionError("connection refused to bolt://localhost:7687")
+
+    import pytest as _pytest  # noqa: PLC0415
+    with _pytest.raises(RuntimeError):
+        eng.heal(bad)
+
+
+def test_helix_endpoints_round_trip() -> None:
+    """/helix/status, /helix/genes, /helix/demo-error, /helix/reset all work."""
+    r = client.post("/api/v1/helix/demo-error")
+    assert r.status_code == 200
+    assert r.json()["ok"] is True
+    g = client.get("/api/v1/helix/genes").json()
+    assert g["count"] >= 1 and g["genes"]
+    s = client.get("/api/v1/helix/status").json()
+    assert s["status"] == "active"
+    assert "recovery_rate" in s
+    r2 = client.post("/api/v1/helix/reset")
+    assert r2.status_code == 200
+    assert client.get("/api/v1/helix/genes").json()["count"] == 0

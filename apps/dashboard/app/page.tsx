@@ -26,6 +26,7 @@ import DriftPanel from "./components/DriftPanel";
 import AuditPanel from "./components/AuditPanel";
 import StreamingPanel from "./components/StreamingPanel";
 import HealingPanel from "./components/HealingPanel";
+import HelixRuntimePanel from "./components/HelixRuntimePanel";
 import GraphPanel from "./components/GraphPanel";
 import ModelRacePanel from "./components/ModelRacePanel";
 import ModelSwitcherPanel from "./components/ModelSwitcherPanel";
@@ -160,6 +161,10 @@ export default function Home() {
 
       <section className="panel">
         <HealingPanel />
+      </section>
+
+      <section className="panel">
+        <HelixRuntimePanel />
       </section>
 
       <section className="panel">

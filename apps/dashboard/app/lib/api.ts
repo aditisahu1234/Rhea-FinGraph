@@ -796,3 +796,58 @@ export async function runGraphCypher(
   }
   return res.json();
 }
+
+// ---- Helix Runtime (PCEC + Gene Map) --------------------------------------
+export interface HelixGene {
+  error_signature: string;
+  repair_strategy: Record<string, unknown>;
+  success_count: number;
+  failure_count: number;
+  total_uses: number;
+  q_value: number;
+  success_rate: number | null;
+  last_used: string;
+}
+export interface HelixRepair {
+  error_signature: string;
+  error_type: string;
+  strategy: Record<string, unknown>;
+  success: boolean;
+  gene_hit: boolean;
+  timestamp: number;
+}
+export interface HelixStatus {
+  status: string;
+  mode: string;
+  gene_count: number;
+  repair_attempts: number;
+  recovery_rate: number | null;
+  gene_hit_rate: number | null;
+  recent_repairs: HelixRepair[];
+}
+export interface HelixGenes {
+  genes: HelixGene[];
+  count: number;
+}
+export async function fetchHelixStatus(): Promise<HelixStatus> {
+  return getJSON<HelixStatus>("/api/v1/helix/status");
+}
+export async function fetchHelixGenes(): Promise<HelixGenes> {
+  return getJSON<HelixGenes>("/api/v1/helix/genes");
+}
+export async function runHelixDemoAttack(): Promise<Record<string, unknown>> {
+  const res = await fetch(`${API_BASE}/api/v1/helix/demo-error`, { method: "POST" });
+  if (!res.ok) {
+    const t = await res.text();
+    throw new Error(`${res.status}: ${t}`);
+  }
+  return res.json();
+}
+export async function resetHelixGenes(): Promise<Record<string, unknown>> {
+  const res = await fetch(`${API_BASE}/api/v1/helix/reset`, { method: "POST" });
+  if (!res.ok) {
+    const t = await res.text();
+    throw new Error(`${res.status}: ${t}`);
+  }
+  return res.json();
+}

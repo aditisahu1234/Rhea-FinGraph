@@ -1,6 +1,7 @@
 import time
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI, HTTPException, status
 
@@ -1499,6 +1500,89 @@ def healing_status() -> dict:
 def healing_heal() -> dict:
     """Helix v2: run one healing cycle now (hot-list + overrides + queue)."""
     return get_healing().heal()
+
+
+# ---------------------------------------------------------------------------
+# Helix Runtime: PCEC repair engine + Gene Map (self-healing memory)
+# ---------------------------------------------------------------------------
+_gene_map: Any | None = None
+_helix_engine: Any | None = None
+
+
+def get_gene_map():
+    global _gene_map  # noqa: PLW0603 - lazy singleton so tests can reset
+    if _gene_map is None:
+        from fingraph_sentinel.helix_runtime.gene_map import GeneMap  # noqa: PLC0415
+        _gene_map = GeneMap(Path(settings.healing_dir) / "gene_map.db")
+    return _gene_map
+
+
+def get_helix_engine():
+    global _helix_engine  # noqa: PLW0603
+    if _helix_engine is None:
+        from fingraph_sentinel.helix_runtime.pcec_engine import PCECEngine  # noqa: PLC0415
+        _helix_engine = PCECEngine(get_gene_map())
+    return _helix_engine
+
+
+@app.get("/api/v1/helix/status", tags=["helix"])
+def helix_status() -> dict:
+    """Helix Runtime status: gene count, mode, measured recovery + gene-hit rates."""
+    eng = get_helix_engine()
+    stats = eng.stats()
+    return {
+        "status": "active",
+        "mode": "auto",
+        "gene_count": stats["gene_count"],
+        "repair_attempts": stats["repair_attempts"],
+        "recovery_rate": stats["recovery_rate"],
+        "gene_hit_rate": stats["gene_hit_rate"],
+        "recent_repairs": eng.history(limit=10),
+    }
+
+
+@app.get("/api/v1/helix/genes", tags=["helix"])
+def helix_genes(limit: int = 20) -> dict:
+    """Top genes in the Gene Map, ordered by Q-value (highest first)."""
+    genes = get_gene_map().get_hot_genes(limit=limit)
+    return {
+        "genes": [g.as_dict() for g in genes],
+        "count": get_gene_map().count(),
+    }
+
+
+@app.post("/api/v1/helix/demo-error", tags=["helix"])
+def helix_demo_error() -> dict:
+    """Trigger a scripted flaky error to demonstrate the PCEC loop live."""
+    engine = get_helix_engine()
+    calls = {"n": 0}
+
+    def flaky() -> dict:
+        calls["n"] += 1
+        if calls["n"] < 2:
+            raise TimeoutError("upstream operation timed out (504)")
+        return {"decision": "allow", "ok": True, "attempts": calls["n"]}
+
+    healed = engine.heal(flaky)
+    stats = engine.stats()
+    return {
+        "ok": True,
+        "message": (
+            f"PCEC healed a simulated timeout in {healed.get('attempts')} attempt(s); "
+            f"strategy stored as a gene."
+        ),
+        "result": healed,
+        "stats": stats,
+    }
+
+
+@app.post("/api/v1/helix/reset", tags=["helix"])
+def helix_reset() -> dict:
+    """Clear the Gene Map and repair history (dashboard reset control)."""
+    engine = get_helix_engine()
+    engine.reset()
+    return {"ok": True, "gene_count": engine.gene_map.count(),
+            "message": "Gene Map cleared; repair history reset."}
 
 
 @app.get("/api/v1/meta", tags=["health"])
