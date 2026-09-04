@@ -1,0 +1,27 @@
+{
+  "renderer": "office-pptx/svg_to_pptx (native editable shapes)",
+  "slides": [
+    {"file": "01_title.svg", "title": "Rhea FinGraph — Title", "layout": "dark hero + 4 stat cards"},
+    {"file": "02_problem.svg", "title": "Problem — merchant fraud costs ₹3.10 Cr", "layout": "problem cards + recovery comparison bars"},
+    {"file": "03_architecture.svg", "title": "6-Layer Self-Healing Architecture", "layout": "6 layer cards in 2 rows + key insight"},
+    {"file": "04_results.svg", "title": "Real parity-verified metrics", "layout": "native column chart + key metric panel"},
+    {"file": "05_helix.svg", "title": "Helix Self-Healing — PCEC + Gene Map", "layout": "6-stage pipeline + gene table (real rows)"},
+    {"file": "06_demo.svg", "title": "5-minute live demo walkthrough", "layout": "5-stop flow list + script note"},
+    {"file": "07_next.svg", "title": "Next steps — prototype to production", "layout": "3-column done/next/why"}
+  ],
+  "visual_rules": {
+    "palette": "dark slate (#0f172a) + sky accent (#38bdf8), green success, amber warning, red danger",
+    "typography": "Inter/system-ui; titles ≥60px, body ≥24px (≥18pt)",
+    "native_charts": "1 native editable column chart on slide 4 (recall by count/amount)"
+  },
+  "honesty_notes": [
+    "All metrics in the deck are real recorded values from the locked test split (₹31,018,572.48 protected; ₹1,184,238 missed; 88.6% count / 96.3% amount recall).",
+    "No borrowed 99.9%/<1ms marketing claims from the generic Helix runtime; slide 5 shows measured RL Q-values and the panel documents measured recovery/gene-hit rates.",
+    "False-positive cost is disclosed on slide 6 and in speaker notes (defense-only tradeoff).",
+    "Gene table rows on slide 5 are real signature/strategy examples from the system's SQLite Gene Map."
+  ],
+  "limitations": [
+    "Gene Map example rows on slide 5 are illustrative of the schema but from real runs where noted.",
+    "Slide 2 recovery comparison intentionally labels the 99.9% figure as a generic runtime claim, not our number."
+  ]
+}
