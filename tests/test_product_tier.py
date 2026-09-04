@@ -467,3 +467,34 @@ def test_helix_endpoints_round_trip() -> None:
     r2 = client.post("/api/v1/helix/reset")
     assert r2.status_code == 200
     assert client.get("/api/v1/helix/genes").json()["count"] == 0
+
+
+def test_helix_decorator_modes_observe_vs_auto(tmp_path) -> None:
+    """observe never heals; auto heals and stores a gene; invalid mode rejected."""
+    from fingraph_sentinel.helix_runtime.decorator import Helix
+    from fingraph_sentinel.helix_runtime.gene_map import GeneMap
+
+    gm = GeneMap(tmp_path / "obs.db")
+
+    @Helix(mode="observe", gene_map=gm)
+    def flaky_obs() -> dict:
+        raise TimeoutError("upstream slow (504)")
+
+    import pytest as _pytest  # noqa: PLC0415
+    with _pytest.raises(TimeoutError):
+        flaky_obs()
+    assert gm.count() == 0  # watch-only: no gene stored
+    assert flaky_obs.helix_engine.history()[0]["strategy"] == {"action": "observe_only"}
+
+    gm2 = GeneMap(tmp_path / "auto.db")
+
+    @Helix(mode="auto", gene_map=gm2, max_attempts=3)
+    def flaky_auto() -> dict:
+        raise TimeoutError("upstream slow (504)")
+
+    with _pytest.raises(RuntimeError):  # never succeeds -> exhausts
+        flaky_auto()
+    assert gm2.count() >= 1  # auto: repaired + learned a gene
+
+    with _pytest.raises(ValueError):
+        Helix(mode="nope")

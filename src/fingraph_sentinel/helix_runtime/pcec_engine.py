@@ -336,6 +336,20 @@ class PCECEngine:
 
     # ----- observability -------------------------------------------------
 
+    def record_observation(self, error: Exception) -> None:
+        """Observe-only mode: classify + record the failure, apply nothing."""
+        error_type, signature = self.classify(error)
+        with self._lock:
+            self._history.append(
+                RepairRecord(
+                    error_signature=signature,
+                    error_type=str(error_type.value),
+                    strategy={"action": "observe_only"},
+                    success=False,
+                    gene_hit=False,
+                )
+            )
+
     def history(self, limit: int = 50) -> list[dict[str, Any]]:
         with self._lock:
             return [r.as_dict() for r in self._history[-limit:]][::-1]
