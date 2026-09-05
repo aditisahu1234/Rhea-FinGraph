@@ -6,15 +6,21 @@ model on the FULL test set. Uses the same parity-verified scoring pipeline
 as business_impact.py.
 """
 from __future__ import annotations
-import json, time
+
+import json
+import time
 from pathlib import Path
+
 import numpy as np
 import polars as pl
 import xgboost as xgb
 from sklearn.metrics import (
-    f1_score, precision_score, recall_score, confusion_matrix,
-    precision_recall_curve, average_precision_score, roc_auc_score,
+    average_precision_score,
+    confusion_matrix,
+    precision_recall_curve,
+    roc_auc_score,
 )
+
 from fingraph_sentinel.features import build_feature_frame
 from fingraph_sentinel.train_baseline import _attach_priors, _matrix
 

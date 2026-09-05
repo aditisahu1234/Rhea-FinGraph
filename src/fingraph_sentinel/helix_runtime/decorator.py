@@ -31,7 +31,8 @@ Usage::
 from __future__ import annotations
 
 import functools
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from fingraph_sentinel.helix_runtime.gene_map import GeneMap
 from fingraph_sentinel.helix_runtime.pcec_engine import PCECEngine

@@ -1,197 +1,305 @@
-# Rhea FinGraph
+# 🛡️ Rhea FinGraph
 
-Rhea FinGraph is a defense-only AI Risk Manager for merchants. It detects likely payment fraud, explains relationship-based risk, recommends a bounded `allow`, `review`, or `hold` decision, and records every decision for audit.
+## AI-Powered Risk Management for Payment Fraud
 
-## Day 1 status
+Rhea FinGraph is a **defense-only** merchant payment-fraud detection platform. It scores transactions in **0.466 ms** (measured steady-state core path), explains every decision with SHAP, and self-heals from failures using a **PCEC (Perceive-Construct-Evaluate-Commit-Verify-Gene)** engine backed by a persistent gene map.
 
-- Docker services: PostgreSQL, Redis, Neo4j Community, Elasticsearch, and a local Helix server.
-- FastAPI service with a canonical, pseudonymous payment-event contract.
-- Next.js dashboard shell.
-- IBM credit-card transaction profiling command.
-- No trained model yet; the API deliberately routes every event to manual review until one is registered.
+> **Honesty policy:** every number in this README is measured from real runs on the IBM synthetic credit-card dataset (`data/processed/ibm_full/*.parquet`, chronological 60/20/20, leakage-safe) or from live benchmarking in this repo. Where something is a plan rather than an implementation, it is explicitly marked **planned**. Source docs: `docs/METRICS.md`, `docs/LATENCY.md`, `docs/REPAIR_PROMOTION_GATE.md`, `artifacts/business_impact.json`.
 
-## Fast local workflow
+---
 
-1. Open this folder in VS Code.
-2. Copy `.env.example` to `.env`, then replace the local passwords.
-3. Create the Python environment: `make setup`.
-4. Start infrastructure: `make services-up`.
-5. Run the API: `make api`.
-6. Visit [API docs](http://localhost:8000/docs).
-7. In another terminal, run `cd apps/dashboard && pnpm install && pnpm dev`.
+## 🎯 Key Metrics
 
-The VS Code command palette includes tasks for starting services, running the API, and testing.
+| Metric | Value | Source |
+|--------|-------|--------|
+| **Fraud Amount Protected** | ₹3.10 Crore (96.3% by amount) | `artifacts/business_impact.json` |
+| **Fraud Events Caught** | 88.6% (4,283 / 4,833 test frauds) | business_impact.json |
+| **Monthly Protected** | ₹9.4 Lakhs | business_impact.json |
+| **Monthly Missed (honest cost)** | ₹35.9K | business_impact.json |
+| **API Latency (core scoring path)** | **0.466 ms/event** (p50 0.455) | `docs/LATENCY.md` (`scripts/latency_bench.py`) |
+| **Throughput** | **2,148 events/second** | LATENCY.md |
+| **Full HTTP round-trip** | ~1.5 ms/event (realistic service ceiling) | LATENCY.md |
+| **Tests Passing** | **155** | `pytest tests/` |
+| **Architecture Layers** | **7** (L0 interaction → L6 audit) | `docs/INTERVIEW_KB.md` |
 
-## Dataset
+**Latency caveat:** the 0.466 ms figure is the in-process *core* path (velocity → feature dict → XGBoost → SHAP → calibrated action → audit), measured after the Layer-0 caching fix documented in `docs/LATENCY.md`. A full FastAPI HTTP round-trip adds ~1 ms on top. Before the fix the same path cost **~140 ms/event** — the caching fix is a ~300× measured improvement, not an estimate.
 
-Primary training data: [IBM Synthetic Credit Card Transactions on Kaggle](https://www.kaggle.com/datasets/ealtman2019/credit-card-transactions).
+---
 
-After configuring Kaggle CLI authentication:
+## 🏗️ Architecture
 
-```bash
-make data-download
-.venv/bin/rhea-profile data/raw/<downloaded-csv> --limit 10000
+Seven layers, one codebase. Solid boxes are **implemented and live**; dashed boxes are **planned** (honest scope).
+
+```mermaid
+flowchart TB
+    subgraph L0["Layer 0 · Interaction & Visualization"]
+        DASH["React/Next.js Dashboard (port 3001)"]
+        CONSOLE["API Console (no-JSON forms)"]
+        ALERT["Merchant Alert Surface"]
+    end
+
+    subgraph L1["Layer 1 · Ingestion & Event Streaming"]
+        WEBHOOK["Razorpay Webhook / Score API (FastAPI :8000)"]
+        VELOCITY["Velocity Store — Redis + in-memory fail-safe"]
+        KAFKA["Kafka queue (planned)"]
+        FLINK["Flink stream processor (planned)"]
+    end
+
+    subgraph L2["Layer 2 · Entity Resolution & Graph"]
+        GRAPH_BUILDER["Temporal Graph Builder (polars snapshots)"]
+        NEO4J[("Neo4j Knowledge Graph — gateway wired, offline-capable")]
+        ELASTIC["Elasticsearch (configured, planned)"]
+    end
+
+    subgraph L3["Layer 3 · Risk Models"]
+        XGB["XGBoost — serving baseline"]
+        V3["XGBoost Velocity v3 (candidate, 40 velocity feats)"]
+        AE["Autoencoder Anomaly Detector"]
+        FUSION["4-signal Fusion Stacker (xgb+lgbm+catboost+AE)"]
+        GNN["Temporal Heterogeneous GNN (research prototype)"]
+    end
+
+    subgraph L4["Layer 4 · Explainability & Drift"]
+        SHAP["SHAP / LIME explanations"]
+        EWMA["EWMA / CUSUM / PSI level drift"]
+        HELIX_DRIFT["Helix per-feature drift + auto-switch"]
+    end
+
+    subgraph L5["Layer 5 · Self-Healing (Helix)"]
+        PCEC["PCEC Engine — 6-stage repair loop"]
+        GENE_MAP[("Gene Map — SQLite + RL Q-values")]
+        HEALING["HealingEngine — hot-list, threshold overrides, retrain queue"]
+        FEDERATED["Federated export/import of genes"]
+        SELF_PLAY["Self-Play attack simulation"]
+    end
+
+    subgraph L6["Layer 6 · Audit & Observability"]
+        AUDIT[("Immutable Audit Ledger — hash chain, Postgres/in-memory")]
+        MLFLOW["MLflow (planned)"]
+        OTEL["OpenTelemetry / Arize Phoenix (planned)"]
+    end
+
+    DASH --> CONSOLE --> WEBHOOK --> VELOCITY
+    VELOCITY --> GRAPH_BUILDER --> NEO4J
+    NEO4J --> GNN --> FUSION --> XGB
+    XGB --> SHAP --> EWMA --> HELIX_DRIFT --> PCEC
+    PCEC --> GENE_MAP --> HEALING
+    HEALING --> FEDERATED
+    SELF_PLAY --> PCEC
+    XGB --> AUDIT
+    KAFKA -.planned.-> WEBHOOK
+    FLINK -.planned.-> KAFKA
+    ELASTIC -.planned.-> GRAPH_BUILDER
+    MLFLOW -.planned.-> AUDIT
+    OTEL -.planned.-> AUDIT
 ```
 
-The profiling report is saved to `artifacts/data_profile.json`. Raw downloads, service volumes, and trained models are ignored by Git.
+**The pipeline in one sentence:** a payment event streams through strictly-past velocity features (L1), a cross-entity graph (L2), and a calibrated XGBoost scorer with SHAP reasons (L3/L4); drift monitors (L4) and the Helix PCEC engine (L5) close the loop — failures mutate real merchant thresholds and persist winning strategies as genes — while every decision lands in an immutable audit chain (L6).
 
-Create the held-out benchmark only after profiling the schema:
+---
 
-```bash
-.venv/bin/rhea-profile data/raw/<downloaded-csv> --limit 500000 \
-  --write-splits data/processed/ibm_500k
-```
+## 🧬 Helix Self-Healing System
 
-## Safety boundary
+A complete self-healing runtime, embedded and tested — not a slide deck promise:
 
-This project is defensive only. It never executes a payment, refund, capture, block, or other money movement. A model may recommend `hold`; a merchant must make the final decision.
+| Component | Status | What It Does |
+|---|---|---|
+| Gene Map | ✅ **Live** | SQLite knowledge base; RL Q-values (lr 0.1, +1.0/−0.5); durable across restarts |
+| PCEC Engine | ✅ **Live** | 6-stage repair pipeline: Perceive → Construct → Evaluate → Commit → Verify → Gene |
+| Threshold Mutation | ✅ **Live** | Repairs actually mutate the merchant's stored hold/review threshold that serving re-reads per decision |
+| Federated Learning | ✅ **Live** | Export/import genes across instances; higher-Q gene wins per signature |
+| Self-Play | ✅ **Live** | Autonomous attack simulation driving real PCEC repairs; survival + latency measured per run |
+| Repair Promotion Gate | ✅ **Live** | Verdict `pass_with_caveat` on record — repair model ROC 0.5989 vs memory 0.5107, top-5k caught 52 vs 7 |
 
-## Baseline model (Phase 2)
+**Measured Helix performance** (from live demo-error runs, `docs/LATENCY.md` methodology):
 
-`src/fingraph_sentinel/features.py` builds strictly causal features: expanding per-customer/card/merchant statistics are shifted by one event so no transaction ever sees its own future, and label-derived priors (merchant fraud rate, category frequencies) are fitted on the training period only.
+| Stage | Measured latency |
+|---|---|
+| First failure repair (cold, no gene) | **1.9 ms** |
+| Gene hit (same failure again) | **1.31 ms** |
+| Self-play repair (avg over 8 attacks) | **1.33 ms** |
 
-Two model variants are supported by the same trainer (`make train-baseline`):
+> All Helix latencies are measured with `time.monotonic()` in the endpoint (`latency_ms` in the response). The generic "99.9% recovery / <1 ms" marketing line for Helix runtimes is **not** claimed here — Rhea reports its own measured recovery rate from actual repairs.
 
-| Variant | Feature set | Purpose |
-| --- | --- | --- |
-| `full` | calendar + causal velocity + priors | Offline benchmarking of what history-aware models can achieve |
-| `online` | calendar + merchant priors only | Serves `/score`; every feature is computable for a single cold-start event |
+---
 
-Serving only online-computable features keeps validation thresholds valid on live traffic. The API loads whatever sits in `artifacts/models/baseline/` lazily on first request -- dropping a trained model there upgrades the running service without a restart.
+## 📊 Model Performance
 
-Decision bands (`allow` / `review` / `hold`) are chosen on validation precision targets with fixed top-risk-rate fallbacks, then applied unchanged to the locked test period. Metrics land in `artifacts/models/<variant>/model_config.json`.
+All rows from `docs/METRICS.md` / `artifacts/comprehensive_metrics.json` on the same locked test split unless noted. Rows are honest per each model's own split.
 
-```bash
-make train-baseline-smoke   # ~20 s pipeline sanity check
-make train-baseline         # full chronological train/validation/test run
-```
+| Model | Val ROC | Test ROC | Status |
+|---|---|---|---|
+| **XGBoost serving** (`baseline-online-xgb`, 12 feats) | **0.8937** | 0.5967 | **Drift-detected** (val→test decay 0.89→0.60; channel-shift documented) |
+| **Velocity v3** (`xgboost_velocity_v3`, 40 feats) | 0.8224 | **0.7646** | **Candidate** — drift-robust; promotion gate blocked (0.8224 < 0.8937) |
+| **Helix Repair** (memory-conditioned, slice L) | in-sample | **0.5989** | `pass_with_caveat` (top-5k 52 vs 7 caught) |
+| **Autoencoder** | 0.8618 | 0.4591 | Secondary signal |
+| **4-signal fusion** (xgb+lgbm+catboost+AE) | 0.8190 | 0.6266 | Research (capped 300K/120K/80K) |
+| **GNN** (TeMP-TraG-style, full graph) | 0.6272 | 0.4664 | Research prototype (Kaggle T4 holdout) |
+| **LightGBM** (velocity, 2.5M slice) | 0.3175 | 0.7373 | **REJECTED** — val worse than random; XGBoost stays the velocity backend |
 
-## Layer 4 & 5 (ensemble + self-healing memory)
+**Why v3 is not promoted (the gate working):** `make promote-velocity` requires candidate val ROC ≥ serving 0.8937; v3's 0.8224 fails the gate. Yet v3's test ROC (0.7646) crushes serving's (0.5967) with far milder val→test decay (0.822→0.765 vs 0.894→0.597): velocity features make ranking robust to the channel shift that breaks the serving model. The honest gap is partly training size (2.5M vs 14.6M rows) — a full-data v3 retrain is the next evidence step, not a promise.
 
-- `make drift-score` / `make drift-monitor`: EWMA/CUSUM/PSI *level* drift.
-- `make explain-shap` / `explain-one` / `explain-lime`: SHAP + LIME on the
-  serving model.
-- `make fusion`: stack XGBoost+LightGBM+CatBoost+autoencoder (optionally GNN
-  via `--gnn-score-file`).
-- `make helix`: Layer 5 per-*feature* drift + retrain trigger + PCEC episodic
-  memory. This catches the ranking drift the level monitor cannot.
+---
 
-> Honest finding (Layer 5 motivation): the XGBoost baseline's mean score stays
-> flat (~0.0058) across 2015-2020 while test AUC collapses 0.89 -> 0.60.
-> Per-feature drift explains it: `channel_swipe` PSI grows to ~5.9 and chip
-> usage shifts 0.0 -> 0.79 as the population migrates channels. Level-based
-> monitors are blind to this; Helix's feature-level watch is not.
-
-```bash
-make helix            # per-feature drift report (train vs val/test)
-```
-
-**Helix v2 — self-healing memory** (see `docs/HELIX_MEMORY.md` for the full
-design + honest boundaries): the drift monitor says *retrain*; failure memory
-says *what went wrong*. Every confirmed outcome (chargeback fraud / cleared
-legit) is recorded against the audited decision, and a healing cycle turns
-that memory into actions — merchant hot-lists, threshold overrides and a
-durable retrain queue:
+## 🚀 Quick Start
 
 ```bash
-make helix-heal            # run one healing cycle (writes heal_report.json)
-make helix-train-repair    # capped CPU repair-train on remembered failures
-make helix-healing-smoke   # score + feedback + heal, end to end
-```
+# Clone
+git clone https://github.com/aditisahu1234/Rhea-FinGraph.git
+cd Rhea-FinGraph
 
-## Layer 0 (API gateway + dashboard)
+# Python env + deps (creates .venv)
+make setup
 
-A live vertical slice serving the real model with SHAP explanations and Helix
-(Layer 5) drift, ready to demo.
+# Optional: Docker services (PostgreSQL, Redis, Neo4j, Elasticsearch)
+make services-up
 
-```bash
-# terminal 1 - risk API
-make api-server                 # FastAPI on :8000
+# Train the serving model (smoke ~20s; full data in artifacts/)
+make train-baseline-smoke        # quick sanity
+make train-baseline-online       # full chronological train/val/test
 
-# terminal 2 - dashboard (from apps/dashboard/)
+# Start the API (FastAPI on :8000)
+make api
+
+# Start the dashboard (new terminal — Next.js on :3001)
 cd apps/dashboard
-npm i
-npm run dev                     # Next.js on :3001
+npm install
+npm run dev
+
+# Run the full test suite (155 passing)
+cd ..
+make test
 ```
 
-### API surface
-- `GET  /api/v1/health/{live,ready}` — liveness / model readiness
-- `GET  /api/v1/model/status` — KPIs + thresholds + locked test metrics
-- `POST /api/v1/transactions/score` — score one payment event; returns the
-  decision band, calibrated fraud probability and **SHAP top reasons**
-  (Layer 4) plus rule-based context reasons. Fails **safe** (manual review) if
-  the model errors — never fails open.
-- `GET  /api/v1/helix/drift` — per-feature drift + retrain trigger (Layer 5)
-- `GET  /api/v1/healing/status` — Helix v2 state: memory, overrides, retrain queue
-- `GET  /api/v1/healing/memory` — remembered episodes, failures, hot merchants
-- `POST /api/v1/healing/feedback` — record an outcome (fraud/legit) against an
-  audited decision
-- `POST /api/v1/healing/heal` — run one healing cycle now
-- `GET  /api/v1/streaming/health` — streaming store health (Layer 1)
-- `GET  /api/v1/streaming/snapshot?entity=&entity_id=` — per-key velocity view
-  (Layer 1)
+Pre-trained artifacts are already committed under `artifacts/models/` (`baseline-online-xgb` is the serving model), so `make api` works out of the box.
 
-The dashboard polls status + drift every 10s, lets you type a transaction and
-watch the gauge, SHAP reason bars, and Helix culprit tags update live.
+---
 
-## Layer 1 (streaming velocity)
+## 🔧 Razorpay Demo
 
-Real-time rolling velocity + cumulative-prior features computed **strictly in
-the past** — the event being scored is read from the store *before* it is
-written, so it never counts toward its own risk (same rule as the offline
-trainer's chronological splits).
-
-- **Windows.** `1h / 24h / 7d` counts, amounts, and distinct counterparties per
-  customer, card, merchant, and device; plus cumulative priors
-  (counts, amount mean, time since previous event) fed back from the stream.
-- **Backends.** Durable Redis (sliding windows via sorted sets + TTL) when
-  `settings.redis_url` is reachable; in-memory fail-safe otherwise — swappable
-  behind one interface in `src/fingraph_sentinel/streaming.py`. `default()`
-  mirrors the Layer 6 ledger policy: the API never 500s because the store is
-  briefly down.
-- **Serving.** `POST /api/v1/transactions/score` computes the velocity vector
-  before scoring and commits the event after (read → score → observe), so the
-  streaming values overlaid onto the model features are honest. A model
-  *trained* on velocity is a later data/Kaggle step — this layer is plumbing +
-  observability, not an accuracy claim.
-- **Offline replay.** `materialize_streaming_features()` replays labeled events
-  chronologically into a polars frame so the trainer can learn velocity later.
-- **API + dashboard.** The **Streaming velocity** panel shows store health,
-  observations, window state, and a per-entity snapshot inspector.
+Defense-only end-to-end demo — create an order, pay, watch the risk decision with SHAP reasons:
 
 ```bash
-make streaming-smoke       # score 3 events + print streaming health/snapshot
+# 1. Create a test order
+curl -X POST localhost:8000/api/v1/razorpay/order \
+  -H "Content-Type: application/json" \
+  -d '{"amount_inr":"1999.00","merchant_id":"TerraMart-5311"}'
+
+# 2. Score the payment (order_id from the response)
+curl -X POST localhost:8000/api/v1/razorpay/pay \
+  -H "Content-Type: application/json" \
+  -d '{"order_id":"<order_id>"}'
 ```
 
-## Layer 6 (compliance audit + observability)
-
-Every scored decision is recorded in a **tamper-evident, append-only audit
-log** so the claim "every decision is auditable" is true, not aspirational.
-
-- **Hash chain.** Each record stores the SHA-256 of the previous record plus
-  its own payload, chaining the whole log. Any retrofit edit, deletion, or
-  reorder is detected by `GET /api/v1/audit/verify`.
-- **Fail-safe.** Appends never break scoring. If the durable store is down the
-  ledger buffers in memory and reports itself unhealthy instead of crashing.
-- **Backends.** PostgreSQL (`audit_ledger` table) when reachable; in-memory
-  otherwise (tests / local runs without Docker). Swappable behind a small
-  interface in `src/fingraph_sentinel/audit.py`.
-- **API.** `GET /api/v1/audit/health`, `/api/v1/audit/recent`, `/api/v1/audit/summary`,
-  `/api/v1/audit/verify`. The dashboard's **Audit ledger** panel shows the
-  live decisions, store health, and chain-integrity status.
+**Helix demo — the self-healing loop (3 scenarios + self-play):**
 
 ```bash
-make audit-smoke          # score a few events + verify the chain locally
+# missed_fraud -> PCEC tightens the merchant's REAL hold threshold
+curl -X POST "localhost:8000/api/v1/helix/demo-error?error_type=missed_fraud&merchant_id=demo_merchant_001"
+
+# same failure again -> gene hit (measured latency_ms in the response)
+curl -X POST "localhost:8000/api/v1/helix/demo-error?error_type=missed_fraud&merchant_id=demo_merchant_001"
+
+# false_hold -> relax; cold_start -> conservative review
+curl -X POST "localhost:8000/api/v1/helix/demo-error?error_type=false_hold&merchant_id=demo_merchant_002"
+curl -X POST "localhost:8000/api/v1/helix/demo-error?error_type=cold_start&merchant_id=demo_merchant_003"
+
+# self-play: 8 attacks through the real model; below-bar = missed -> repaired
+curl -X POST "localhost:8000/api/v1/helix/self-play?iterations=8&reaction_ratio=4.0"
+
+# inspect the durable gene map + measured recovery
+curl -X GET localhost:8000/api/v1/helix/genes
+curl -X GET localhost:8000/api/v1/helix/status
 ```
 
-## GNN strengthening
+The dashboard (port 3001) renders all of this live: Helix Runtime panel, attack simulator, outcome P&L, graph view, and a no-JSON API Console at `/api-console`.
 
-The first full-data temporal GNN (val ROC 0.627 / test 0.466) is a smoke-tier
-run on a harder holdout than the baseline — not a fair loss. The honest,
-pitchable story is the **ensemble** (GBDT + GNN + AE + Helix), not "GNN alone
-beats XGBoost". See [`docs/GNN_STRENGTHENING.md`](docs/GNN_STRENGTHENING.md)
-for the ranked upgrade path (fair event-aligned split → richer node features →
-real architecture + pre-train init → calibrate & fuse) and the honest scoreboard
-in [`docs/METRICS.md`](docs/METRICS.md).
+---
 
+## 📈 Business Impact
 
+Locked-test economic simulation (replays the real P&L, `artifacts/business_impact.json`):
+
+| Outcome | Value |
+|---|---|
+| **Fraud amount protected** | ₹3.10 Crore (96.3% by amount) |
+| **Fraud events caught** | 88.6% (4,283 / 4,833) |
+| **Per-month protected** | ₹939,956.74 |
+| **Per-month missed (disclosed)** | ₹35,886.00 |
+| **Hold volume (defense-only cost)** | 2.34M holds — 48% of volume are legit holds; disclosed, not hidden |
+
+The system is **defense-only**: it never executes a payment, refund, capture, or block. A model may recommend `hold`; the merchant makes the final decision.
+
+---
+
+## 📊 Dataset & Methodology
+
+Primary training data: [IBM Synthetic Credit Card Transactions on Kaggle](https://www.kaggle.com/datasets/ealtman2019/credit-card-transactions) — 24.39M rows, 68 months (2014-07 → 2020-02), chronological 60/20/20 split, 4,833 test frauds (0.0991%). INR conversion at 83.5.
+
+**Leakage safety (verified, `docs/LEAKAGE_AUDIT.md`):**
+
+- Features are **strictly causal**: per-customer/card/merchant expanding statistics are shifted by one event — no transaction ever sees its own future.
+- Label-derived priors (merchant fraud rate, MCC frequencies) are fitted on the training period only.
+- Velocity features replay chronologically through production `VelocityStore` semantics; the offline twin is verified byte-parity against the serial oracle (worst abs diff 2.3e-12 on 100K rows).
+- Decision bands (`allow`/`review`/`hold`) are chosen on validation precision targets, then applied unchanged to the locked test period.
+
+---
+
+## 🧪 Testing
+
+```bash
+# All tests: 155 passed, 0 failed
+make test                      # = OMP_NUM_THREADS=1 .venv/bin/python -m pytest -q
+
+# Targeted helix integration (closed-loop P0 tests)
+.venv/bin/python -m pytest tests/test_helix_integration.py -v
+
+# Lint
+make lint                      # ruff E,F,I clean on the whole tree
+```
+
+The helix integration suite (`tests/test_helix_integration.py`) exercises the *real* wiring: PCEC tightens actual stored thresholds on missed_fraud, relaxes on false_hold, persists the fix as a gene, and round-trips export/import.
+
+---
+
+## 🛠️ Tech Stack
+
+Implemented vs planned — honest columns:
+
+| Layer | Implemented | Planned |
+|---|---|---|
+| API | Python 3.11, FastAPI, Pydantic | — |
+| ML | XGBoost, LightGBM, CatBoost (fusion, optional), PyTorch, SHAP/LIME, Polars | Full-data v3 retrain (T4) |
+| Graph | PyTorch Geometric (research), Neo4j gateway (offline-capable), polars snapshots | Elasticsearch ingestion |
+| Data | Polars, PostgreSQL (audit ledger), Redis (velocity, in-memory fail-safe) | Kafka / Flink streaming |
+| Frontend | Next.js 15, React, TypeScript, SVG force graph | — |
+| Self-Healing | Helix (PCEC + Gene Map + federated + self-play + threshold mutation) | — |
+| Observability | Immutable audit hash chain, heal/helix reports | MLflow, OpenTelemetry, Arize Phoenix |
+
+---
+
+## 📁 Repository Layout
+
+```
+src/fingraph_sentinel/     core package (serving, streaming, healing, helix_runtime, attack_simulator)
+  helix_runtime/           PCEC engine, gene map (SQLite+RL), decorator
+apps/dashboard/            Next.js dashboard (port 3001)
+scripts/                   latency bench, evaluation gate, training
+tests/                     155 tests (helix integration, product tier, healing, streaming, audit, …)
+artifacts/models/          trained models + configs (serving + candidates)
+artifacts/business_impact.json   locked-test P&L (verified)
+docs/                      honest metrics, latency, gate verdicts, runbooks
+```
+
+---
+
+## 📝 License
+
+MIT
+
+## 🙏 Acknowledgments
+
+- Inspired by Razorpay Buildathon 2026
+- Helix self-healing runtime concept (generic runtime claims kept separate from Rhea's measured numbers)
+- Cipher Sentinel (DTCC Hackathon winner) and the Nullbyte Merchant Risk Engine (Google Cloud Hackathon 2025 3rd Place) for the defense-only merchant-risk framing
+- Built with ❤️ for Razorpay AI Buildathon 2026

@@ -30,9 +30,10 @@ import hashlib
 import re
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable
+from typing import Any
 
 from fingraph_sentinel.helix_runtime.gene_map import GeneMap
 
