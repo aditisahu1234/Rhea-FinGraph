@@ -131,6 +131,14 @@ class GeneMap:
             row = conn.execute("SELECT COUNT(*) AS n FROM genes").fetchone()
         return int(row["n"]) if row else 0
 
+    def get_all_genes(self) -> list[Gene]:
+        """All genes, highest Q first (used by export / federated sharing)."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM genes ORDER BY q_value DESC"
+            ).fetchall()
+        return [self._row_to_gene(r) for r in rows]
+
     # ----- write ---------------------------------------------------------
 
     def update_gene(

@@ -185,6 +185,77 @@ class HealingEngine:
     def hot_merchants(self) -> list[dict[str, Any]]:
         return list(_load_json(self._hotlist_path()).get("merchants", []))
 
+    # ----- per-merchant threshold adjustments (PCEC commit target) ----------
+
+    def _merchant_threshold_path(self) -> Path:
+        """Per-merchant threshold state, colocated with the model."""
+        return self.model_dir / "merchant_thresholds.json"
+
+    def merchant_thresholds(self) -> dict[str, Any]:
+        return _load_json(self._merchant_threshold_path()).get("merchants", {})
+
+    def get_merchant_threshold(self, merchant_id: str) -> dict[str, Any]:
+        """Current threshold state for a merchant (defaults to model base)."""
+        state = self.merchant_thresholds().get(merchant_id)
+        if state:
+            return state
+        base = _load_json(self.model_dir / "model_config.json").get("thresholds", {})
+        return {
+            "hold": float(base.get("hold", 0.0)),
+            "review": float(base.get("review", 0.0)),
+            "adjustments": [],
+        }
+
+    def tighten_threshold(self, merchant_id: str, factor: float = 1.25) -> dict[str, Any]:
+        """Tighten a merchant's hold threshold (catch more fraud). Persistent."""
+        if factor <= 1.0:
+            raise ValueError("tighten factor must be > 1.0")
+        return self._adjust_merchant_threshold(merchant_id, factor, "tighten")
+
+    def relax_threshold(self, merchant_id: str, factor: float = 0.8) -> dict[str, Any]:
+        """Relax a merchant's hold threshold (fewer false holds). Persistent."""
+        if factor >= 1.0:
+            raise ValueError("relax factor must be < 1.0")
+        return self._adjust_merchant_threshold(merchant_id, factor, "relax")
+
+    def _adjust_merchant_threshold(
+        self, merchant_id: str, factor: float, kind: str
+    ) -> dict[str, Any]:
+        cur = self.get_merchant_threshold(merchant_id)
+        old_hold = float(cur.get("hold", 0.0))
+        new_hold = round(old_hold * factor, 8)
+        # hard floor so we never hold literally everything / nothing
+        new_hold = min(max(new_hold, 1e-8), 0.999999)
+        adj = {
+            "action": kind,
+            "factor": round(factor, 4),
+            "old_hold": old_hold,
+            "new_hold": new_hold,
+            "merchant_id": merchant_id,
+            "timestamp": _now_iso(),
+        }
+        state = self.merchant_thresholds()
+        entry = dict(cur)
+        entry["hold"] = new_hold
+        entry.setdefault("adjustments", [])
+        entry["adjustments"].append(adj)
+        state[merchant_id] = entry
+        _write_json(
+            self._merchant_threshold_path(),
+            {"updated_at": _now_iso(), "merchants": state},
+        )
+        return {"status": kind, **adj}
+
+    def sync_thresholds_to_serving(self, merchant_id: str) -> bool:
+        """Ensure the merchant threshold is available to the serving layer.
+
+        The per-merchant store lives next to ``model_config.json`` on disk, and
+        the scoring path re-reads it on every decision (see
+        ``main._apply_threshold_override``), so a persist is already "synced".
+        Returning True lets the PCEC commit phase treat this as applied.
+        """
+        return merchant_id in self.merchant_thresholds()
+
     def stats(self) -> dict[str, Any]:
         mem = self.memory.stats()
         drift = self.drift_trigger()

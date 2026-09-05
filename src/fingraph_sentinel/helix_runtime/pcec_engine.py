@@ -92,9 +92,15 @@ class PCECEngine:
         self,
         gene_map: GeneMap | None = None,
         max_attempts: int = DEFAULT_MAX_ATTEMPTS,
+        healing_engine: Any | None = None,
     ) -> None:
         self.gene_map = gene_map or GeneMap()
         self.max_attempts = max_attempts
+        # Optional real healing engine: when wired, decision repairs
+        # (tighten_hold / relax_hold) actually mutate the served thresholds,
+        # closing the loop. When absent, they record the strategy as a gene
+        # and return a readable stub (honest about what was applied).
+        self.healing_engine = healing_engine
         self._history: list[RepairRecord] = []
         self._lock = threading.Lock()
 
@@ -232,14 +238,17 @@ class PCECEngine:
             # Operational: hand back to caller's override via context hint.
             return original_func(*args, **kwargs)
         if action == "tighten_hold":
-            return self._rhea_heal(context.get("healing_engine"),
-                                   "tighten", candidate.strategy)
+            return self._rhea_heal(
+                context.get("healing_engine") or self.healing_engine,
+                "tighten", context, candidate.strategy)
         if action == "relax_hold":
-            return self._rhea_heal(context.get("healing_engine"),
-                                   "relax", candidate.strategy)
+            return self._rhea_heal(
+                context.get("healing_engine") or self.healing_engine,
+                "relax", context, candidate.strategy)
         if action == "queue_retrain":
-            return self._rhea_heal(context.get("healing_engine"),
-                                   "retrain", candidate.strategy)
+            return self._rhea_heal(
+                context.get("healing_engine") or self.healing_engine,
+                "retrain", context, candidate.strategy)
         if action == "conservative_review":
             return {"action": "review", "security_action": "REQUEST_STEP_UP",
                     "reason": "Helix cold-start conservative routing",
@@ -251,14 +260,38 @@ class PCECEngine:
         }
 
     @staticmethod
-    def _rhea_heal(healing_engine: Any, kind: str, strategy: dict[str, Any]) -> Any:
-        """Apply a real healing action (or return a readable stub when absent)."""
+    def _rhea_heal(
+        healing_engine: Any,
+        kind: str,
+        context: dict[str, Any],
+        strategy: dict[str, Any],
+    ) -> Any:
+        """Apply a REAL healing action when a HealingEngine is wired.
+
+        tighten/relax call the engine's per-merchant threshold adjusters (the
+        served model then re-reads the store each decision). retrain appends a
+        durable retrain request. When no engine is wired, record the strategy
+        as a readable stub (honest: nothing was mutated).
+        """
+        merchant_id = str(context.get("merchant_id", "global"))
+        factor = float(strategy.get("factor", 1.25))
         if healing_engine is not None:
             try:
-                return healing_engine.heal()
-            except Exception:  # noqa: BLE001 - any engine issue -> readable stub
-                pass
-        factor = strategy.get("factor", 1.0)
+                if kind == "tighten":
+                    return healing_engine.tighten_threshold(merchant_id, factor)
+                if kind == "relax":
+                    return healing_engine.relax_threshold(merchant_id, factor)
+                if kind == "retrain":
+                    from fingraph_sentinel.healing import append_retrain_request  # noqa: PLC0415
+                    append_retrain_request(
+                        healing_engine._queue_path(),
+                        reason="PCEC gene: retrain",
+                        meta={"merchant_id": merchant_id},
+                        model_version="helix",
+                    )
+                    return {"status": "queued", "merchant_id": merchant_id}
+            except Exception as exc:  # noqa: BLE001 - never fail the loop
+                return {"action": f"{kind}_hold", "error": f"heal failed: {exc}"}
         return {"action": f"{kind}_hold", "factor": factor,
                 "note": "healing engine not wired; recorded strategy for gene"}
 

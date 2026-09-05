@@ -76,19 +76,41 @@ missed ₹1,184,238, per-month ₹939,957.
 ## 3:20–4:10 — Helix self-healing (stop 4)
 
 > "The reason this keeps getting better is the self-healing loop. This panel
-> is the Helix Runtime — but it's not a demo prop. Watch."
+> is the Helix Runtime — and it's wired to the real serving path. Watch."
 
-**Do:** Helix Runtime panel → **Trigger a failure** (scripted flaky op).
+**Do:** Helix Runtime panel → **Trigger a failure** (scripted flaky op / timeout).
 
 > "PCEC — Perceive, Construct, Evaluate, Commit, Verify, Gene — just ran
-> against a real failure: it retried with a longer timeout, verified the
-> result, and stored the winning strategy as a gene. See the new row? That's
-> RL — the Q-value moves up on success, down on failure. Next time the same
-> failure signature appears, it resolves instantly from the gene map.
-> The recovery rate you see is *measured from this system's own repairs* —
-> not a borrowed 99.9% marketing claim."
+> against a real failure: it classified it, applied the best-known or typed
+> strategy, verified the repair, and stored the winning strategy as a gene.
+> The latency you see is *measured* — the panel prints it in milliseconds.
+> Recovery and gene-hit rates below are measured from this system's own
+> repairs — not a borrowed 99.9% marketing claim."
 
 **Do:** Point at the gene table row + the stats (recovery rate, gene count).
+
+**Do (30s): the closed loop is real, not a prop.** Open a terminal and run
+the three scenario curls (endpoint uses query params, not a JSON body):
+
+```bash
+# 1. missed_fraud -> PCEC tightens the merchant's REAL hold threshold
+curl -X POST "localhost:8000/api/v1/helix/demo-error?error_type=missed_fraud&merchant_id=demo_merchant_001"
+# 2. same failure again -> repaired from the gene map (measured latency)
+curl -X POST "localhost:8000/api/v1/helix/demo-error?error_type=missed_fraud&merchant_id=demo_merchant_001"
+# 3. false_hold -> relax; cold_start -> conservative review
+curl -X POST "localhost:8000/api/v1/helix/demo-error?error_type=false_hold&merchant_id=demo_merchant_002"
+curl -X POST "localhost:8000/api/v1/helix/demo-error?error_type=cold_start&merchant_id=demo_merchant_003"
+# 4. self-play: 8 attacks through the real model; below-bar attacks are
+#    missed_fraud episodes PCEC repairs (survival + latency measured)
+curl -X POST "localhost:8000/api/v1/helix/self-play?iterations=8&reaction_ratio=4.0"
+curl -X GET  "localhost:8000/api/v1/helix/status"
+curl -X GET  "localhost:8000/api/v1/helix/genes"
+```
+
+> "Watch the response: `old_hold` → `new_hold` moved — the repair actually
+> changed the threshold the serving model uses for that merchant. It's not a
+> demo display; the next live decision reads the tightened value. The gene map
+> is durable — restart the API and the genes are still there."
 
 ---
 
@@ -105,7 +127,7 @@ missed ₹1,184,238, per-month ₹939,957.
 
 **Close (20s):**
 > "So: defense-only, explainable, self-healing, and — most importantly —
-> honest. 147 tests pass, the promotion gate is real, and the P&L is verified
+> honest. 155 tests pass, the promotion gate is real, and the P&L is verified
 > byte-for-byte. Thank you — happy to run any of this again or take questions."
 
 ---

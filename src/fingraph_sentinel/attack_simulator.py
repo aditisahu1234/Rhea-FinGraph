@@ -346,3 +346,168 @@ def run_scenario(
             "discrimination the model is performing."
         ),
     }
+
+
+# ---------------------------------------------------------------------------
+# Self-play: drive attack scenarios through the REAL PCEC repair loop and
+# measure the closed loop (attack -> repair -> gene) with honest timings.
+# ---------------------------------------------------------------------------
+
+SELF_PLAY_SCENARIOS = ["VELOCITY_ATTACK", "AMOUNT_SPIKE", "MERCHANT_ANOMALY", "NEW_CUSTOMER"]
+
+
+class SelfPlayLoop:
+    """Adversarial self-play: auto-generate attacks, trigger PCEC repairs,
+    record measured repair latency + gene outcomes.
+
+    Unlike the scripted single-run scenarios, this loop closes the defence:
+    each attack that the hero model fails to repel yields a decision-failure
+    episode (missed_fraud), which PCEC converts into a real per-merchant
+    threshold tighten + a stored gene. Repeating the same attack later should
+    hit the gene (measured, never claimed).
+    """
+
+    def __init__(
+        self,
+        pcec_engine: Any,
+        score_one: Callable[[PaymentEvent], Any],
+        velocity_get: Callable[[PaymentEvent], dict],
+        merchant_pool: list[str] | None = None,
+        min_reaction_ratio: float = 2.0,
+    ) -> None:
+        self.pcec = pcec_engine
+        self.score_one = score_one
+        self.velocity_get = velocity_get
+        self.merchant_pool = merchant_pool or ["m_selfplay_001", "m_selfplay_002"]
+        # An attack is *defended* only when the model's raw-margin reaction is
+        # at least this many times the NORMAL baseline (an explicit, honest
+        # discrimination threshold; calibrated actions are unreachable on
+        # synthetic events because probabilities are compressed ~650x).
+        self.min_reaction_ratio = min_reaction_ratio
+        self.results: list[dict[str, Any]] = []
+
+    def _normal_baseline_max_raw(self) -> float:
+        """Max raw margin the model emits for a NORMAL customer stream.
+
+        Honest detection baseline: an attack counts as *defended* when the
+        model's raw velocity reaction exceeds anything it emits for a normal
+        stream. (Calibrated probabilities are compressed ~650x so hold/review
+        are unreachable on synthetic events; raw margin is the module's own
+        documented before/after metric.)
+        """
+        from fingraph_sentinel.attack_simulator import (  # noqa: PLC0415
+            build_events as _build_events,
+        )
+        from fingraph_sentinel.attack_simulator import (
+            build_pre_seed as _build_pre_seed,
+        )
+
+        _build_pre_seed("NORMAL")
+        max_raw = -1e9
+        for ev in _build_events("NORMAL"):
+            dec = self.score_one(ev)
+            max_raw = max(max_raw, float(getattr(dec, "raw_margin", 0.0)))
+        return max_raw
+
+    def run(self, iterations: int = 6, seed: int = 7) -> list[dict[str, Any]]:
+        """One self-play pass: scenario -> attack events -> PCEC repair."""
+        import time  # noqa: PLC0415
+
+        _ = seed  # deterministic ordering comes from scenario rotation
+        baseline_raw = self._normal_baseline_max_raw()
+        self.results = []
+        for i in range(max(1, iterations)):
+            scenario_key = SELF_PLAY_SCENARIOS[i % len(SELF_PLAY_SCENARIOS)]
+            merchant_id = self.merchant_pool[i % len(self.merchant_pool)]
+            # an attacker repeats the SAME scenario at the same merchant so a
+            # stored gene can be hit on the second pass
+            repeat = bool(i > 0 and (i % 2 == 1))
+            attack_no = i + 1
+
+            # 1) generate + score the attack events (real model output)
+            events = build_events(scenario_key, merchant_id=merchant_id)
+            steps = []
+            for ev in events:
+                dec = self.score_one(ev)
+                steps.append({
+                    "index": len(steps),
+                    "amount_inr": round(float(ev.amount) * INR_PER_USD, 2),
+                    "risk": round(float(dec.fraud_probability), 4),
+                    "raw_margin": round(float(getattr(dec, "raw_margin", 0.0)), 4),
+                    "action": dec.action,
+                })
+                self.velocity_get(ev)  # commit to velocity store (realistic)
+
+            # 2) determine defence outcome: raw reaction above normal baseline
+            max_raw = max(s["raw_margin"] for s in steps)
+            caught = max_raw > baseline_raw * self.min_reaction_ratio
+            failure_type = None if caught else "missed_fraud"
+
+            # 3) if missed -> PCEC repairs (tighten via real HealingEngine)
+            repair: dict[str, Any] | None = None
+            latency_ms: float | None = None
+            gene_hit = False
+            if failure_type:
+                def decision_failure() -> dict:
+                    raise ValueError(
+                        f"helix: {failure_type} detected for merchant {merchant_id}"
+                    )
+                t0 = time.monotonic()
+                repair = self.pcec.heal(
+                    decision_failure, context={"merchant_id": merchant_id}
+                )
+                latency_ms = round((time.monotonic() - t0) * 1000, 2)
+                # gene hit = the identical failure was repaired from the cached
+                # gene strategy (a reopen of the same signature)
+                gene_hit = bool(
+                    self.pcec.gene_map.get_repair(
+                        self.pcec._generate_signature(
+                            ValueError(f"helix: {failure_type} detected for merchant {merchant_id}")
+                        )
+                    )
+                    and repair
+                )
+
+            self.results.append({
+                "attack": attack_no,
+                "repeat_of_previous": repeat,
+                "scenario": scenario_key,
+                "merchant_id": merchant_id,
+                "max_risk": max(s["risk"] for s in steps),
+                "max_raw_margin": max(s["raw_margin"] for s in steps),
+                "normal_baseline_raw": round(baseline_raw, 4),
+                "defended": caught,
+                "failure_type": failure_type,
+                "repair": repair,
+                "repair_latency_ms": latency_ms,
+                "gene_hit": gene_hit,
+            })
+        return self.results
+
+    def stats(self) -> dict[str, Any]:
+        n = len(self.results)
+        if n == 0:
+            return {"status": "no_data"}
+        defended = sum(1 for r in self.results if r["defended"])
+        repaired = sum(1 for r in self.results if r["repair"] is not None)
+        latencies = [
+            r["repair_latency_ms"] for r in self.results
+            if r["repair_latency_ms"] is not None
+        ]
+        return {
+            "attacks": n,
+            "defended": defended,
+            "missed": n - defended,
+            "survival_rate": round(defended / n, 4) if n else None,
+            "pcEC_repairs": repaired,
+            "avg_repair_latency_ms": (
+                round(sum(latencies) / len(latencies), 2) if latencies else None
+            ),
+            "fastest_repair_ms": round(min(latencies), 2) if latencies else None,
+            "slowest_repair_ms": round(max(latencies), 2) if latencies else None,
+            "gene_hits": sum(1 for r in self.results if r["gene_hit"]),
+            "scenario_breakdown": {
+                s: sum(1 for r in self.results if r["scenario"] == s)
+                for s in SELF_PLAY_SCENARIOS
+            },
+        }

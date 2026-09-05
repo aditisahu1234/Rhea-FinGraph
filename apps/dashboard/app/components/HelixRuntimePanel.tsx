@@ -53,9 +53,11 @@ export default function HelixRuntimePanel() {
     try {
       const d = (await runHelixDemoAttack()) as {
         message?: string;
+        latency_ms?: number;
         stats?: { gene_count?: number };
       };
-      setMsg(d.message ?? "PCEC repair executed.");
+      const lat = typeof d.latency_ms === "number" ? ` · ${d.latency_ms}ms measured` : "";
+      setMsg(`${d.message ?? "PCEC repair executed."}${lat}`);
       await refresh();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "demo failed");

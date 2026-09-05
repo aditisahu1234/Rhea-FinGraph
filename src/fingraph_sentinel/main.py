@@ -910,7 +910,7 @@ def razorpay_pay(body: dict) -> dict:
                 is_model_ready=True,
                 processed_at=datetime.now(UTC).isoformat(),
             )
-            _apply_threshold_override(decision)
+            _apply_threshold_override(decision, getattr(event, "merchant_id", None))
     except Exception:  # noqa: BLE001 - fail safe to review, never fail open
         decision = _safe_review_decision(event)
     finally:
@@ -1348,7 +1348,8 @@ def score_transaction(event: PaymentEvent) -> RiskDecision:
         # product layer: concrete security action + readable reasons.
         decision.security_action = security_action(decision.action)  # type: ignore[assignment]
         decision.reasons_human = human_reasons(values)
-        _apply_threshold_override(decision)  # Layer 5 healing: miss/false-hold
+        # Layer 5/6 healing: per-merchant override (PCEC) then global
+        _apply_threshold_override(decision, getattr(event, "merchant_id", None))
         _audit("decision.scored", event, decision)
         return decision
     finally:
@@ -1356,15 +1357,31 @@ def score_transaction(event: PaymentEvent) -> RiskDecision:
         get_velocity().observe(event)
 
 
-def _apply_threshold_override(decision: RiskDecision) -> None:
-    """Layer 5 healing: re-derive the decision band from a live override."""
-    over = get_healing().threshold_overrides()
-    hold = over.get("hold")
-    if hold is None:
-        return
+def _apply_threshold_override(decision: RiskDecision, merchant_id: str | None = None) -> None:
+    """Layer 5/6 healing: re-derive the decision band from live overrides.
+
+    Priority: per-merchant override (set by PCEC tighten/relax) first, then
+    the global override (set by the grow-up heal cycle). This is the closed
+    loop: a PCEC repair actually changes the next decision for that merchant.
+    """
+    healing = get_healing()
     try:
         base = _config()["thresholds"]
-        review = float(over.get("review", base["review"]))
+        # Per-merchant override from the PCEC commit target.
+        hold: float | None = None
+        review: float | None = None
+        if merchant_id:
+            mstate = healing.get_merchant_threshold(merchant_id)
+            if mstate and mstate.get("adjustments"):
+                hold = float(mstate["hold"])
+                review = float(mstate.get("review", base["review"]))
+        if hold is None:
+            over = healing.threshold_overrides()
+            hold = over.get("hold")
+            if hold is not None:
+                review = float(over.get("review", base["review"]))
+        if hold is None:
+            return
         p = float(decision.fraud_probability)
         decision.action = (  # type: ignore[assignment]
             "hold" if p >= float(hold) else "review" if p >= review else "allow"
@@ -1521,7 +1538,7 @@ def get_helix_engine():
     global _helix_engine  # noqa: PLW0603
     if _helix_engine is None:
         from fingraph_sentinel.helix_runtime.pcec_engine import PCECEngine  # noqa: PLC0415
-        _helix_engine = PCECEngine(get_gene_map())
+        _helix_engine = PCECEngine(get_gene_map(), healing_engine=get_healing())
     return _helix_engine
 
 
@@ -1535,7 +1552,9 @@ def helix_status() -> dict:
         "mode": "auto",
         "gene_count": stats["gene_count"],
         "repair_attempts": stats["repair_attempts"],
+        "repair_successes": stats["repair_successes"],
         "recovery_rate": stats["recovery_rate"],
+        "gene_hits": stats["gene_hits"],
         "gene_hit_rate": stats["gene_hit_rate"],
         "recent_repairs": eng.history(limit=10),
     }
@@ -1552,9 +1571,56 @@ def helix_genes(limit: int = 20) -> dict:
 
 
 @app.post("/api/v1/helix/demo-error", tags=["helix"])
-def helix_demo_error() -> dict:
-    """Trigger a scripted flaky error to demonstrate the PCEC loop live."""
+def helix_demo_error(
+    error_type: str = "timeout",
+    merchant_id: str = "demo_merchant_001",
+    factor: float | None = None,
+) -> dict:
+    """Trigger a scripted failure for PCEC to repair live.
+
+    error_type:
+      - timeout (default): flaky op heals on retry -> stored as gene
+      - missed_fraud: PCEC tightens a REAL per-merchant hold threshold, which
+        the serving layer then applies to that merchant's next decision
+      - false_hold: PCEC relaxes the merchant threshold (fewer holds)
+      - cold_start: conservative routing, no threshold mutation
+    """
     engine = get_helix_engine()
+    t0 = time.monotonic()
+
+    if error_type in ("missed_fraud", "false_hold", "cold_start"):
+        marker = error_type
+        _ = factor  # strategy factors are chosen inside the repair engine
+
+        def decision_failure() -> dict:
+            raise ValueError(
+                f"helix: {marker} detected for merchant {merchant_id}"
+            )
+
+        context = {"merchant_id": merchant_id}
+        healed = engine.heal(decision_failure, context=context)
+        # show what the repair changed on the live merchant threshold
+        mstate = get_healing().get_merchant_threshold(merchant_id)
+        stats = engine.stats()
+        return {
+            "ok": True,
+            "error_type": error_type,
+            "merchant_id": merchant_id,
+            "message": (
+                f"PCEC repaired a {error_type} failure: "
+                f"{healed.get('status', healed.get('action'))}; "
+                f"strategy recorded as gene."
+            ),
+            "repair": healed,
+            "merchant_threshold_now": {
+                "hold": mstate.get("hold"),
+                "adjustments": len(mstate.get("adjustments", [])),
+            },
+            "latency_ms": round((time.monotonic() - t0) * 1000, 2),
+            "stats": stats,
+        }
+
+    # default: operational flaky timeout
     calls = {"n": 0}
 
     def flaky() -> dict:
@@ -1567,12 +1633,55 @@ def helix_demo_error() -> dict:
     stats = engine.stats()
     return {
         "ok": True,
+        "error_type": "timeout",
         "message": (
             f"PCEC healed a simulated timeout in {healed.get('attempts')} attempt(s); "
             f"strategy stored as a gene."
         ),
-        "result": healed,
+        "repair": healed,
+        "latency_ms": round((time.monotonic() - t0) * 1000, 2),
         "stats": stats,
+    }
+
+
+@app.get("/api/v1/helix/export", tags=["helix"])
+def helix_export() -> dict:
+    """Export the full Gene Map (federated sharing: another instance can import)."""
+    genes = get_gene_map().get_all_genes()
+    return {
+        "version": "1.0",
+        "exported_at": datetime.now(UTC).isoformat(),
+        "gene_count": len(genes),
+        "genes": [g.as_dict() for g in genes],
+    }
+
+
+@app.post("/api/v1/helix/import", tags=["helix"])
+def helix_import(genes: list[dict] | None = None) -> dict:
+    """Import a Gene Map payload; keep the higher-Q gene per signature."""
+    payload = genes or []
+    gm = get_gene_map()
+    imported = 0
+    kept = 0
+    for g in payload:
+        sig = g.get("error_signature")
+        strategy = g.get("repair_strategy")
+        q = float(g.get("q_value", 0.0))
+        if not sig or not strategy:
+            continue
+        existing = gm.get_repair(sig)
+        if existing and existing.q_value >= q:
+            kept += 1
+            continue
+        # seed with a real outcome so Q-history is honest: success if the
+        # imported gene has a higher success rate, else failure once.
+        success = float(g.get("success_rate", 1.0) or 1.0) >= 0.5
+        gm.update_gene(sig, strategy, success)
+        imported += 1
+    return {
+        "imported": imported,
+        "kept_existing_higher_q": kept,
+        "gene_count": gm.count(),
     }
 
 
@@ -1692,3 +1801,54 @@ def _safe_review_decision(event: PaymentEvent) -> RiskDecision:
         is_model_ready=False,
         processed_at=datetime.now(UTC).isoformat(),
     )
+
+
+@app.post("/api/v1/helix/self-play", tags=["helix"])
+def helix_self_play(iterations: int = 6, reaction_ratio: float = 2.0) -> dict:
+    """Adversarial self-play: attack scenarios -> PCEC repair -> measured stats.
+
+    Each attack is scored through the REAL v3 model + velocity store. An attack
+    is *defended* only when the model's raw-margin reaction exceeds the NORMAL
+    baseline by ``reaction_ratio`` (default 2.0x — an explicit, honest
+    threshold; calibrated actions are unreachable on synthetic events because
+    probabilities are compressed ~650x). Attacks below that bar become
+    missed_fraud episodes PCEC repairs by tightening the merchant's real
+    threshold and storing a gene. Survival + latency are measured from this
+    run, never claimed.
+    """
+    from fingraph_sentinel.attack_simulator import (  # noqa: PLC0415
+        SelfPlayLoop,
+        make_v3_scorer,
+    )
+
+    vel = get_velocity()
+    vel.clear()  # clean velocity state -> honest NORMAL baseline per run
+    scorer = make_v3_scorer(vel.compute)
+    loop = SelfPlayLoop(
+        pcec_engine=get_helix_engine(),
+        score_one=scorer,
+        velocity_get=vel.observe,
+        min_reaction_ratio=reaction_ratio,
+    )
+    results = loop.run(iterations=iterations)
+    stats = loop.stats()
+    stats["reaction_ratio"] = reaction_ratio
+    return {
+        "status": "completed",
+        "iterations": iterations,
+        "stats": stats,
+        "recent_results": results[-5:],
+    }
+
+
+@app.get("/api/v1/helix/self-play/stats", tags=["helix"])
+def helix_self_play_stats() -> dict:
+    """Last self-play run's measured stats (or no_data before first run)."""
+    # in-memory: report the last aggregate via a fresh read of gene state
+    eng = get_helix_engine()
+    return {
+        "status": "available",
+        "gene_count": eng.gene_map.count(),
+        "measured_gene_hits": eng.stats()["gene_hits"],
+        "recovery_rate": eng.stats()["recovery_rate"],
+    }

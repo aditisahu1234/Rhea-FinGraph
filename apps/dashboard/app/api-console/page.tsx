@@ -139,6 +139,35 @@ const ENDPOINTS: Endpoint[] = [
     },
   },
   {
+    path: "/api/v1/helix/demo-error",
+    method: "POST",
+    title: "Trigger a failure (PCEC heals it)",
+    whatToInput: "Pick the failure kind. The PCEC engine classifies it, applies a real repair (per-merchant threshold tighten/relax for fraud/legit errors) and stores a gene. Latency is measured.",
+    fields: [
+      { key: "error_type", label: "Failure kind", type: "select", options: ["missed_fraud", "false_hold", "cold_start", "timeout"], default: "missed_fraud" },
+      { key: "merchant_id", label: "Merchant ID", type: "text", placeholder: "demo_merchant_001" },
+    ],
+    confirm: (r) => {
+      const d = r as { repair?: { status?: string }; latency_ms?: number; ok?: boolean };
+      if (d.ok === false) return `✖ ${(r as { error?: string }).error ?? "failed"}`;
+      return `✔ PCEC repaired — ${d?.repair?.status ?? "see body"} (${d?.latency_ms ?? "…"}ms measured).`;
+    },
+  },
+  {
+    path: "/api/v1/helix/self-play",
+    method: "POST",
+    title: "Run self-play (attacks -> repairs)",
+    whatToInput: "Push N attack scenarios through the real model. Attacks below the reaction-ratio bar become missed_fraud episodes PCEC repairs; survival + repair latency are measured from this run.",
+    fields: [
+      { key: "iterations", label: "Iterations", type: "number", default: "8" },
+      { key: "reaction_ratio", label: "Reaction ratio (defense bar)", type: "number", default: "4.0" },
+    ],
+    confirm: (r) => {
+      const d = r as { stats?: { survival_rate?: number; avg_repair_latency_ms?: number; pcEC_repairs?: number } };
+      return `✔ Self-play done — survival ${d?.stats?.survival_rate ?? "…"}, ${d?.stats?.pcEC_repairs ?? 0} repairs (avg ${d?.stats?.avg_repair_latency_ms ?? "…"}ms).`;
+    },
+  },
+  {
     path: "/api/v1/healing/feedback",
     method: "POST",
     title: "Record an outcome (Helix memory)",
@@ -179,6 +208,11 @@ const CHECKS: { path: string; title: string; confirm: (r: unknown) => string }[]
     return ok === false ? "✖ Chain verification FAILED — tampering detected." : "✔ Audit chain verified intact.";
   } },
   { path: "/api/v1/helix/drift", title: "Per-feature drift check", confirm: () => "✔ Drift checked — no unresolved distribution shift (see body)." },
+  { path: "/api/v1/helix/status", title: "Helix Runtime status", confirm: (r) => {
+    const d = r as { gene_count?: number; repair_attempts?: number; recovery_rate?: number };
+    return `✔ Helix active — ${d?.gene_count ?? 0} genes, ${d?.repair_attempts ?? 0} repairs, recovery ${d?.recovery_rate ?? "…"}.`;
+  } },
+  { path: "/api/v1/helix/genes", title: "Learned repair genes", confirm: (r) => `✔ ${(r as { count?: number }).count ?? 0} repair genes stored.` },
 ];
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
