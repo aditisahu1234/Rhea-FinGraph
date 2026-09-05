@@ -9,6 +9,60 @@
           "new_hold": 0.00203224,
           "old_hold": 0.001625791817699639,
           "timestamp": "2026-09-05T12:56:15Z"
+        },
+        {
+          "action": "tighten",
+          "factor": 1.25,
+          "merchant_id": "demo_merchant_001",
+          "new_hold": 0.0025403,
+          "old_hold": 0.00203224,
+          "timestamp": "2026-09-05T14:35:47Z"
+        },
+        {
+          "action": "tighten",
+          "factor": 1.25,
+          "merchant_id": "demo_merchant_001",
+          "new_hold": 0.00317538,
+          "old_hold": 0.0025403,
+          "timestamp": "2026-09-05T14:36:03Z"
+        },
+        {
+          "action": "tighten",
+          "factor": 1.25,
+          "merchant_id": "demo_merchant_001",
+          "new_hold": 0.00396922,
+          "old_hold": 0.00317538,
+          "timestamp": "2026-09-05T14:36:16Z"
+        },
+        {
+          "action": "tighten",
+          "factor": 1.25,
+          "merchant_id": "demo_merchant_001",
+          "new_hold": 0.00496152,
+          "old_hold": 0.00396922,
+          "timestamp": "2026-09-05T15:03:56Z"
+        },
+        {
+          "action": "relax",
+          "factor": 0.8,
+          "merchant_id": "demo_merchant_001",
+          "new_hold": 0.00396922,
+          "old_hold": 0.00496152,
+          "timestamp": "2026-09-05T15:03:56Z"
+        }
+      ],
+      "hold": 0.00396922,
+      "review": 0.0015936916632287807
+    },
+    "demo_merchant_003": {
+      "adjustments": [
+        {
+          "action": "tighten",
+          "factor": 1.25,
+          "merchant_id": "demo_merchant_003",
+          "new_hold": 0.00203224,
+          "old_hold": 0.001625791817699639,
+          "timestamp": "2026-09-05T16:39:04Z"
         }
       ],
       "hold": 0.00203224,
@@ -51,5 +105,5 @@
       "review": 0.0015936916632287807
     }
   },
-  "updated_at": "2026-09-05T13:00:07Z"
+  "updated_at": "2026-09-05T16:39:04Z"
 }

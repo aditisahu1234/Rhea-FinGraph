@@ -1,7 +1,7 @@
 "use client";
 
 // PaymentDemoPanel — LIMITATION #2 fix.
-// Wraps the existing FINGRAPH inference engine in a payment-style lifecycle:
+// Wraps the existing risk-engine inference path in a payment-style lifecycle:
 // create test order -> payment event -> velocity -> XGBoost -> SHAP ->
 // ALLOW / REVIEW / HOLD -> webhook -> audit. Demonstrable live against the
 // real API without rebuilding the model or using live Payment keys.
@@ -131,9 +131,10 @@ export default function PaymentDemoPanel() {
       </div>
       <p className="panel-sub">
         A payment-style flow through the existing engine: create a test
-        order, then the payment event enters FINGRAPH → velocity → XGBoost →
-        SHAP → ALLOW/REVIEW/HOLD → webhook → audit. Reuses the exact same
-        scoring path as live traffic; nothing is mocked at the model layer.
+        order, then the payment event enters the risk engine → velocity
+        features → XGBoost → SHAP → ALLOW/REVIEW/HOLD → webhook → audit.
+        Reuses the exact same scoring path as live traffic; nothing is mocked
+        at the model layer.
       </p>
 
       <div className="demo-controls">

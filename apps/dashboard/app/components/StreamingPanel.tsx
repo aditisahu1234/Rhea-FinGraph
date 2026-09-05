@@ -98,8 +98,8 @@ export default function StreamingPanel() {
           <span className="stat-k">flowed keys</span>
         </div>
         <div className="stat">
-          <span className="stat-v">{health?.entries ? Object.keys(health.entries).length : 0}</span>
-          <span className="stat-k">window sets</span>
+          <span className="stat-v">{health?.entries ?? 0}</span>
+          <span className="stat-k">window entries</span>
         </div>
       </div>
 

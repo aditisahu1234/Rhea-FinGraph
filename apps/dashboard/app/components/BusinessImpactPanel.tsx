@@ -133,10 +133,18 @@ export default function BusinessImpactPanel() {
               <span className="muted">protected / month</span>
             </div>
             <div className="impact-cell">
-              <span className="impact-num">{inr(prot?.fraud_amount_missed_inr)}</span>
+              <span className="impact-num">{inr(prot?.per_month_missed_inr)}</span>
               <span className="muted">missed / month</span>
             </div>
           </div>
+
+          {prot?.fraud_amount_missed_inr != null && (
+            <p className="muted small" style={{ marginTop: 6 }}>
+              ₹{Math.round(prot.fraud_amount_missed_inr).toLocaleString("en-IN")} missed
+              in total across the locked 33-month window (chargeback loss not yet
+              recovered).
+            </p>
+          )}
 
           {bi.top_mcc_by_fraud_amount && bi.top_mcc_by_fraud_amount.length > 0 && (
             <p className="muted small">

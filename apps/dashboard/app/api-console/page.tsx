@@ -1,6 +1,6 @@
 "use client";
 
-// APIConsole — a human-friendly console for the FINGRAPH backend.
+// APIConsole — a human-friendly console for the risk-engine backend.
 // No raw JSON editing: every endpoint is a form with a plain "what to input"
 // heading and labelled fields. The page maps the form values to the request
 // JSON in the background and executes. GETs that need no input show a clear
@@ -299,7 +299,7 @@ export default function APIConsole() {
         <div className="brand">
           <span className="logo">RF</span>
           <div>
-            <h1>FINGRAPH API Console</h1>
+            <h1>API Console</h1>
             <p className="tagline">
               Run backend actions without touching JSON — fill in the plain fields below; the
               console builds the request and shows a clear confirmation.

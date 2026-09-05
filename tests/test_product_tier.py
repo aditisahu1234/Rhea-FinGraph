@@ -8,6 +8,8 @@ the cold-start route must be strictly more conservative than the model on an
 unknown entity.
 """
 
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 
 from fingraph_sentinel.cold_start import cold_start_risk, is_cold_start
@@ -465,8 +467,20 @@ def test_pcec_exhausts_and_raises_on_unrecoverable(tmp_path) -> None:
         eng.heal(bad)
 
 
-def test_helix_endpoints_round_trip() -> None:
-    """/helix/status, /helix/genes, /helix/demo-error, /helix/reset all work."""
+def test_helix_endpoints_round_trip(tmp_path: Path, monkeypatch) -> None:
+    """/helix/status, /helix/genes, /helix/demo-error, /helix/reset all work.
+
+    The app's gene-map singletons default to the LIVE artifacts/healing dir;
+    point them at a temp dir and drop the cached singleton instances first so
+    the reset in this test can never wipe the real demo gene map.
+    """
+    import fingraph_sentinel.main as main_module  # noqa: PLC0415
+
+    monkeypatch.setattr(main_module.settings, "healing_dir", tmp_path)
+    monkeypatch.setattr(main_module, "_gene_map", None)
+    monkeypatch.setattr(main_module, "_helix_engine", None)
+    monkeypatch.setattr(main_module, "_healing", None)
+
     r = client.post("/api/v1/helix/demo-error")
     assert r.status_code == 200
     assert r.json()["ok"] is True

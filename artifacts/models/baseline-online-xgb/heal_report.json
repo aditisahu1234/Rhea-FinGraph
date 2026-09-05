@@ -1,28 +1,361 @@
 {
   "actions": [
-    "rates recovered -> cleared threshold override",
-    "queued retrain: drift trigger 0.4844 (Layer 5)"
+    "hot-list 25 merchant(s) -> merchant_hotlist.json",
+    "queued retrain: drift trigger 0.4844 (Layer 5)",
+    "queued retrain: 147 remembered failures (missed 147, false-hold 0)"
   ],
   "drift": {
     "score": 0.4844,
     "trigger": "YES"
   },
-  "hot_merchants": [],
+  "hot_merchants": [
+    {
+      "failures": 19,
+      "false_hold": 0,
+      "first_failure_at": "2026-09-04T07:59:34Z",
+      "last_failure_at": "2026-09-05T14:41:36Z",
+      "merchant_id": "5411",
+      "missed_fraud": 19,
+      "txns": 38
+    },
+    {
+      "failures": 10,
+      "false_hold": 0,
+      "first_failure_at": "2026-08-30T09:08:08Z",
+      "last_failure_at": "2026-08-30T09:08:10Z",
+      "merchant_id": "-4282466774399734331",
+      "missed_fraud": 10,
+      "txns": 2217
+    },
+    {
+      "failures": 9,
+      "false_hold": 0,
+      "first_failure_at": "2026-08-30T09:08:08Z",
+      "last_failure_at": "2026-08-30T09:08:10Z",
+      "merchant_id": "1913477460590765860",
+      "missed_fraud": 9,
+      "txns": 1191
+    },
+    {
+      "failures": 6,
+      "false_hold": 0,
+      "first_failure_at": "2026-08-30T09:08:08Z",
+      "last_failure_at": "2026-08-30T09:08:10Z",
+      "merchant_id": "-8566951830324093739",
+      "missed_fraud": 6,
+      "txns": 73
+    },
+    {
+      "failures": 4,
+      "false_hold": 0,
+      "first_failure_at": "2026-08-30T09:08:08Z",
+      "last_failure_at": "2026-08-30T09:08:10Z",
+      "merchant_id": "-5904116920141006298",
+      "missed_fraud": 4,
+      "txns": 133
+    },
+    {
+      "failures": 4,
+      "false_hold": 0,
+      "first_failure_at": "2026-08-30T09:08:08Z",
+      "last_failure_at": "2026-08-30T09:08:10Z",
+      "merchant_id": "-3220758452254689706",
+      "missed_fraud": 4,
+      "txns": 258
+    },
+    {
+      "failures": 4,
+      "false_hold": 0,
+      "first_failure_at": "2026-08-30T09:08:08Z",
+      "last_failure_at": "2026-08-30T09:08:10Z",
+      "merchant_id": "6135208568923449408",
+      "missed_fraud": 4,
+      "txns": 366
+    },
+    {
+      "failures": 4,
+      "false_hold": 0,
+      "first_failure_at": "2026-08-30T09:08:08Z",
+      "last_failure_at": "2026-08-30T09:08:09Z",
+      "merchant_id": "-112121233619748226",
+      "missed_fraud": 4,
+      "txns": 68
+    },
+    {
+      "failures": 3,
+      "false_hold": 0,
+      "first_failure_at": "2026-08-30T09:08:08Z",
+      "last_failure_at": "2026-08-30T09:08:10Z",
+      "merchant_id": "2884193360641017720",
+      "missed_fraud": 3,
+      "txns": 41
+    },
+    {
+      "failures": 3,
+      "false_hold": 0,
+      "first_failure_at": "2026-08-30T09:08:08Z",
+      "last_failure_at": "2026-08-30T09:08:10Z",
+      "merchant_id": "-521141999023077663",
+      "missed_fraud": 3,
+      "txns": 79
+    },
+    {
+      "failures": 3,
+      "false_hold": 0,
+      "first_failure_at": "2026-08-30T09:08:08Z",
+      "last_failure_at": "2026-08-30T09:08:09Z",
+      "merchant_id": "5237739159769445856",
+      "missed_fraud": 3,
+      "txns": 59
+    },
+    {
+      "failures": 3,
+      "false_hold": 0,
+      "first_failure_at": "2026-08-30T09:08:08Z",
+      "last_failure_at": "2026-08-30T09:08:10Z",
+      "merchant_id": "4872340518840476610",
+      "missed_fraud": 3,
+      "txns": 24
+    },
+    {
+      "failures": 3,
+      "false_hold": 0,
+      "first_failure_at": "2026-08-30T09:08:09Z",
+      "last_failure_at": "2026-08-30T09:08:10Z",
+      "merchant_id": "-1612219785829480227",
+      "missed_fraud": 3,
+      "txns": 43
+    },
+    {
+      "failures": 3,
+      "false_hold": 0,
+      "first_failure_at": "2026-08-30T09:08:08Z",
+      "last_failure_at": "2026-08-30T09:08:10Z",
+      "merchant_id": "-1007477596717646975",
+      "missed_fraud": 3,
+      "txns": 76
+    },
+    {
+      "failures": 3,
+      "false_hold": 0,
+      "first_failure_at": "2026-08-30T09:08:08Z",
+      "last_failure_at": "2026-08-30T09:08:10Z",
+      "merchant_id": "-2151619699797351738",
+      "missed_fraud": 3,
+      "txns": 11
+    },
+    {
+      "failures": 2,
+      "false_hold": 0,
+      "first_failure_at": "2026-08-30T09:08:08Z",
+      "last_failure_at": "2026-08-30T09:08:08Z",
+      "merchant_id": "4241336128694185533",
+      "missed_fraud": 2,
+      "txns": 427
+    },
+    {
+      "failures": 2,
+      "false_hold": 0,
+      "first_failure_at": "2026-08-30T09:08:10Z",
+      "last_failure_at": "2026-08-30T09:08:10Z",
+      "merchant_id": "838425044734233142",
+      "missed_fraud": 2,
+      "txns": 163
+    },
+    {
+      "failures": 2,
+      "false_hold": 0,
+      "first_failure_at": "2026-08-30T09:08:09Z",
+      "last_failure_at": "2026-08-30T09:08:10Z",
+      "merchant_id": "6455213054093379528",
+      "missed_fraud": 2,
+      "txns": 67
+    },
+    {
+      "failures": 2,
+      "false_hold": 0,
+      "first_failure_at": "2026-08-30T09:08:08Z",
+      "last_failure_at": "2026-08-30T09:08:08Z",
+      "merchant_id": "-7421093378627544099",
+      "missed_fraud": 2,
+      "txns": 316
+    },
+    {
+      "failures": 2,
+      "false_hold": 0,
+      "first_failure_at": "2026-08-30T09:08:08Z",
+      "last_failure_at": "2026-08-30T09:08:10Z",
+      "merchant_id": "5753024633661164610",
+      "missed_fraud": 2,
+      "txns": 39
+    },
+    {
+      "failures": 2,
+      "false_hold": 0,
+      "first_failure_at": "2026-08-30T09:08:08Z",
+      "last_failure_at": "2026-08-30T09:08:10Z",
+      "merchant_id": "-6761066196029841443",
+      "missed_fraud": 2,
+      "txns": 134
+    },
+    {
+      "failures": 2,
+      "false_hold": 0,
+      "first_failure_at": "2026-08-30T09:08:08Z",
+      "last_failure_at": "2026-08-30T09:08:10Z",
+      "merchant_id": "-5581123930363301609",
+      "missed_fraud": 2,
+      "txns": 134
+    },
+    {
+      "failures": 2,
+      "false_hold": 0,
+      "first_failure_at": "2026-08-30T09:08:09Z",
+      "last_failure_at": "2026-08-30T09:08:09Z",
+      "merchant_id": "7501849281341469857",
+      "missed_fraud": 2,
+      "txns": 31
+    },
+    {
+      "failures": 2,
+      "false_hold": 0,
+      "first_failure_at": "2026-08-30T09:08:10Z",
+      "last_failure_at": "2026-08-30T09:08:10Z",
+      "merchant_id": "-2042049018365856408",
+      "missed_fraud": 2,
+      "txns": 86
+    },
+    {
+      "failures": 2,
+      "false_hold": 0,
+      "first_failure_at": "2026-08-30T09:08:09Z",
+      "last_failure_at": "2026-08-30T09:08:10Z",
+      "merchant_id": "-1677177681046431359",
+      "missed_fraud": 2,
+      "txns": 38
+    }
+  ],
   "memory": {
-    "durable": false,
+    "durable": true,
     "durable_file": "artifacts/healing/failure_memory.jsonl",
-    "episodes": 0,
-    "failures": 0,
+    "episodes": 50027,
+    "failures": 147,
     "false_hold": 0,
     "false_hold_rate": 0.0,
-    "hot_merchants": 0,
-    "miss_rate": 0.0,
-    "missed_fraud": 0,
-    "recent": []
+    "hot_merchants": 25,
+    "miss_rate": 0.0029,
+    "missed_fraud": 147,
+    "recent": [
+      {
+        "action": "allow",
+        "event": {
+          "amount": "49.99",
+          "card_id": "K-2001",
+          "customer_id": "C-1001",
+          "merchant_id": "1334959",
+          "payment_channel": null,
+          "transaction_id": "seed-001"
+        },
+        "fail_type": null,
+        "feedback_at": "2026-09-05T14:41:36Z",
+        "fraud_probability": 0.0,
+        "model_version": "cold-start-rules",
+        "outcome": "legit",
+        "reasons": [
+          "cold_start"
+        ],
+        "source": "feedback",
+        "transaction_id": "seed-001"
+      },
+      {
+        "action": "hold",
+        "event": {
+          "amount": "875.50",
+          "card_id": "K-2001",
+          "customer_id": "C-1001",
+          "merchant_id": "5411",
+          "payment_channel": null,
+          "transaction_id": "seed-005"
+        },
+        "fail_type": null,
+        "feedback_at": "2026-09-05T14:41:36Z",
+        "fraud_probability": 0.7,
+        "model_version": "cold-start-rules",
+        "outcome": "fraud",
+        "reasons": [
+          "cold_start"
+        ],
+        "source": "feedback",
+        "transaction_id": "seed-005"
+      },
+      {
+        "action": "allow",
+        "event": {
+          "amount": "299.00",
+          "card_id": "K-2001",
+          "customer_id": "C-1001",
+          "merchant_id": "5411",
+          "payment_channel": null,
+          "transaction_id": "seed-002"
+        },
+        "fail_type": "missed_fraud",
+        "feedback_at": "2026-09-05T14:41:36Z",
+        "fraud_probability": 0.0,
+        "model_version": "cold-start-rules",
+        "outcome": "fraud",
+        "reasons": [
+          "cold_start"
+        ],
+        "source": "feedback",
+        "transaction_id": "seed-002"
+      },
+      {
+        "action": "allow",
+        "event": {
+          "amount": "49.99",
+          "card_id": "K-2001",
+          "customer_id": "C-1001",
+          "merchant_id": "1334959",
+          "payment_channel": null,
+          "transaction_id": "seed-001"
+        },
+        "fail_type": null,
+        "feedback_at": "2026-09-05T13:33:17Z",
+        "fraud_probability": 0.0,
+        "model_version": "cold-start-rules",
+        "outcome": "legit",
+        "reasons": [
+          "cold_start"
+        ],
+        "source": "feedback",
+        "transaction_id": "seed-001"
+      },
+      {
+        "action": "hold",
+        "event": {
+          "amount": "875.50",
+          "card_id": "K-2001",
+          "customer_id": "C-1001",
+          "merchant_id": "5411",
+          "payment_channel": null,
+          "transaction_id": "seed-005"
+        },
+        "fail_type": null,
+        "feedback_at": "2026-09-05T13:33:17Z",
+        "fraud_probability": 0.7,
+        "model_version": "cold-start-rules",
+        "outcome": "fraud",
+        "reasons": [
+          "cold_start"
+        ],
+        "source": "feedback",
+        "transaction_id": "seed-005"
+      }
+    ]
   },
   "model_version": "xgboost_online_v2",
-  "retrain_queue_len": 1,
+  "retrain_queue_len": 3,
   "retrain_queued": true,
-  "run_at": "2026-08-29T09:44:20Z",
+  "run_at": "2026-09-05T14:50:54Z",
   "threshold_overrides": {}
 }

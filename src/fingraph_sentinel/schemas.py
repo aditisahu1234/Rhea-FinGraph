@@ -87,6 +87,7 @@ class ModelStatus(BaseModel):
     training_rows: int | None = None
     thresholds: dict | None = None
     metrics_validation: dict | None = None
+    metrics_test_locked: dict | None = None
 
 
 # ---- Layer 2: graph store (local snapshots + Neo4j) ---------------------

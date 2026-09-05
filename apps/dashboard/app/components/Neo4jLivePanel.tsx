@@ -12,6 +12,7 @@ import ForceGraphCanvas from "./ForceGraphCanvas";
 
 const QUERIES: { key: string; label: string }[] = [
   { key: "overview", label: "Connected web (customers ↔ merchants)" },
+  { key: "fraud_web", label: "Fraud web: customers around fraud-rate merchants" },
   { key: "hot_merchants", label: "Highest fraud-rate merchants" },
   { key: "cards_of_customers", label: "Customers and their cards" },
   { key: "fraud_edges", label: "Confirmed-fraud purchase edges" },

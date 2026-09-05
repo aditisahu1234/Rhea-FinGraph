@@ -1,8 +1,10 @@
 // api.ts — client-side data access for the Rhea FinGraph dashboard.
-// Reads API_BASE from a build-time env var, defaulting to localhost:8000.
+// Reads API_BASE from a build-time env var, defaulting to 127.0.0.1:8000.
+// 127.0.0.1 is used (not localhost) because the API binds IPv4 only and some
+// browsers resolve localhost to ::1 first, intermittently hanging the request.
 
 export const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
+  process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
 
 export interface RiskReason {
   feature: string;
@@ -500,7 +502,7 @@ export interface StreamingHealth {
   backend: string;
   observations: number;
   total_flowed_keys: number | null;
-  entries?: Record<string, number>;
+  entries?: number;
 }
 
 export interface StreamingWindow {

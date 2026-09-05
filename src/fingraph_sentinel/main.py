@@ -172,7 +172,9 @@ def model_status() -> ModelStatus:
         training_rows=cfg.get("training_rows"),
         thresholds=cfg.get("thresholds"),
         metrics_validation=cfg.get("metrics_validation"),
-        metrics_test_locked=cfg.get("metrics_test_locked"),
+        # locked-test row = the velocity-v3 hero's recorded metrics (the same
+        # artifact /api/v1/model/race reads); serving val stays above.
+        metrics_test_locked=_hero_locked_test() or cfg.get("metrics_test_locked"),
     )
 
 
@@ -349,14 +351,14 @@ def graph_status() -> GraphStatus:
 def graph_sample(max_nodes: int = 120, seed: int = 7) -> dict:
     """Return a capped, renderable subgraph for the dashboard visualizer.
 
-    Loads the newest local temporal snapshot, extracts a deterministic sample
-    of customer/merchant/card nodes and their 'purchased'/'has_card' edges,
-    and marks any merchant that appears in the Helix confirmed-fraud rollup.
-    Returns nodes (id, type, fraud flag) and edges (source→target) the force-
-    directed graph can render. Pure local data — no Neo4j required.
+    Loads the newest local temporal snapshot and extracts a DETERMINISTIC,
+    focused sample (heavy-user customers → shared merchants → their other
+    customers → cards) so the demo shows a connected relational web, not a
+    random scatter. Returns nodes (id, type, fraud flag) and edges
+    (source→target) the force-directed graph can render. Pure local data —
+    no Neo4j required.
     """
     import json as _json  # noqa: PLC0415
-    import random  # noqa: PLC0415
 
     import torch  # noqa: PLC0415
 
@@ -387,34 +389,95 @@ def graph_sample(max_nodes: int = 120, seed: int = 7) -> dict:
                     hot.add(str(mv))
 
     g = torch.load(str(src), map_location="cpu", weights_only=False)
-    rng = random.Random(seed)
-
-    # ---- build node set: sample customers, then their neighbours ----
-    cust_src = g["customer"].x
-    base_cust = list(range(cust_src.shape[0]))
-    rng.shuffle(base_cust)
-    keep_cust = set(base_cust[:max(10, max_nodes // 4)])
 
     purchased = g["customer", "purchased", "merchant"].edge_index
     has_card = g["customer", "has_card", "card"].edge_index
 
-    # merchants/cards reachable from kept customers
-    keep_merch, keep_card = set(), set()
+    # ---- focused deterministic subgraph (demo-friendly, ~60-90 nodes) ----
+    # Instead of a random scatter, sample the HIGHEST-DEGREE customers as
+    # seeds ("heavy users"), then walk their merchants, the other customers
+    # who bought from those same merchants (shared-merchant web), and the
+    # cards they hold. Deterministic: no randomness, stable across reloads.
+    from collections import defaultdict  # noqa: PLC0415
+
+    cust_merch: dict[int, list[int]] = defaultdict(list)
+    merch_cust: dict[int, list[int]] = defaultdict(list)
+    cust_card: dict[int, list[int]] = defaultdict(list)
+    for e in range(purchased.shape[1]):
+        c, m = int(purchased[0, e]), int(purchased[1, e])
+        cust_merch[c].append(m)
+        merch_cust[m].append(c)
+    for e in range(has_card.shape[1]):
+        c, cd = int(has_card[0, e]), int(has_card[1, e])
+        cust_card[c].append(cd)
+
+    # heavy-user seeds by purchase count (desc, then index for stability)
+    seeds = sorted(cust_merch, key=lambda c: (-len(cust_merch[c]), c))
+    seed_n = max(4, min(10, max_nodes // 12))  # 4-10 hub customers
+    keep_cust: list[int] = seeds[:seed_n]
+    cust_cap = max(8, max_nodes // 3)
+    merch_cap = max(8, max_nodes // 3)
+    card_cap = max(6, max_nodes // 6)
+
+    # their merchants (bounded, most-shared first for a connected web)
+    seed_merch: list[int] = []
+    for c in keep_cust:
+        seed_merch.extend(cust_merch[c])
+    seed_merch = list(dict.fromkeys(seed_merch))  # dedupe, keep order
+    keep_merch = sorted(seed_merch, key=lambda m: (-len(merch_cust[m]), m))[:merch_cap]
+
+    # other customers who share those merchants (the relational web)
+    for m in keep_merch:
+        for c in merch_cust[m]:
+            if len(keep_cust) >= cust_cap:
+                break
+            if c not in keep_cust:
+                keep_cust.append(c)
+        if len(keep_cust) >= cust_cap:
+            break
+
+    # more merchants reachable from the expanded customer set (bounded)
+    extra_merch: list[int] = []
+    for c in keep_cust:
+        extra_merch.extend(cust_merch[c])
+    for m in sorted(set(extra_merch) - set(keep_merch),
+                    key=lambda m: (-len(merch_cust[m]), m)):
+        if len(keep_merch) >= merch_cap:
+            break
+        keep_merch.append(m)
+
+    # cards of kept customers (bounded)
+    keep_card: list[int] = []
+    for c in keep_cust:
+        for cd in cust_card[c]:
+            if cd not in keep_card:
+                keep_card.append(cd)
+                if len(keep_card) >= card_cap:
+                    break
+        if len(keep_card) >= card_cap:
+            break
+
+    # guaranteed hard cap on TOTAL nodes (demo render budget)
+    while len(keep_cust) + len(keep_merch) + len(keep_card) > max_nodes:
+        if len(keep_card) > card_cap - 2 and keep_card:
+            keep_card.pop()
+        elif len(keep_merch) > merch_cap - 4 and keep_merch:
+            keep_merch.pop()
+        elif len(keep_cust) > cust_cap - 4 and len(keep_cust) > 4:
+            keep_cust.pop()
+
+    keep_cust, keep_merch, keep_card = set(keep_cust), set(keep_merch), set(keep_card)
+
+    # edges only between kept nodes (recompute from raw index, honest subset)
     edge_rows = []
     for e in range(purchased.shape[1]):
         c, m = int(purchased[0, e]), int(purchased[1, e])
-        if c in keep_cust:
-            keep_merch.add(m)
+        if c in keep_cust and m in keep_merch:
             edge_rows.append(("purchased", c, m))
     for e in range(has_card.shape[1]):
         c, cd = int(has_card[0, e]), int(has_card[1, e])
-        if c in keep_cust:
-            keep_card.add(cd)
+        if c in keep_cust and cd in keep_card:
             edge_rows.append(("has_card", c, cd))
-
-    # cap
-    keep_merch = set(list(keep_merch)[: max_nodes - len(keep_cust)])
-    keep_card = set(list(keep_card)[: max_nodes // 2])
 
     def mid(nt: str, i: int) -> str:
         return f"{nt}-{i}"
@@ -452,9 +515,11 @@ def graph_sample(max_nodes: int = 120, seed: int = 7) -> dict:
         "nodes": nodes,
         "edges": edges,
         "note": (
-            "Rendered from the local temporal graph snapshot. A merchant is "
-            "marked fraud only when it appears in the Helix confirmed-fraud "
-            "rollup; node type is always colored distinctly."
+            "Rendered from the local temporal graph snapshot. The subgraph is "
+            "deterministic: heavy-user customers, the merchants they share, and "
+            "the cards they hold. A merchant is marked fraud only when it "
+            "appears in the Helix confirmed-fraud rollup; node type is always "
+            "colored distinctly."
         ),
     }
 
@@ -503,11 +568,30 @@ CYPHER_QUERIES: dict[str, dict[str, str]] = {
     "fraud_edges": {
         "label": "Confirmed-fraud purchase edges",
         "cypher": """
-            MATCH (c:Customer)-[r:PURCHASED {is_fraud: true}]->(m:Merchant)
+            MATCH (c:Customer)-[r:PURCHASED {is_fraud: 1}]->(m:Merchant)
             LIMIT 50
             RETURN id(c) AS sid, c.id AS customer_id, 'customer' AS stype,
                    id(m) AS tid, m.id AS merchant_id, 'merchant' AS ttype,
                    m.mcc_code AS mcc, COALESCE(m.fraud_rate, 0) AS fraud_rate
+        """,
+    },
+    "fraud_web": {
+        "label": "Fraud web: customers around high-fraud-rate merchants",
+        "cypher": """
+            MATCH (c:Customer)-[r:PURCHASED {is_fraud: 1}]->(m:Merchant)
+            WITH m ORDER BY m.fraud_rate DESC LIMIT 6
+            MATCH (c2:Customer)-[:PURCHASED]->(m)
+            WITH DISTINCT c2, m
+            WITH c2, collect(DISTINCT m) AS fraud_m
+            LIMIT 20
+            UNWIND fraud_m AS fm
+            WITH DISTINCT c2, fm
+            MATCH (c2)-[:PURCHASED]->(m2:Merchant)
+            WHERE id(m2) <> id(fm)
+            WITH c2, fm, m2 LIMIT 70
+            RETURN id(c2) AS sid, c2.id AS customer_id, 'customer' AS stype,
+                   id(m2) AS tid, m2.id AS merchant_id, 'merchant' AS ttype,
+                   m2.mcc_code AS mcc, COALESCE(m2.fraud_rate, 0) AS fraud_rate
         """,
     },
 }
@@ -701,9 +785,9 @@ def model_race() -> dict:
         "positioning": {
             "hero_model": "baseline-online-v3",
             "hero_note": (
-                "FINGRAPH Velocity v3 is the hero: drift-robust on a locked "
-                "future test period (test ROC 0.7646), resisting the Jan 2015 "
-                "concept shift that collapsed the prior model. It is the "
+                "baseline-online-v3 (velocity features) is the hero: drift-robust "
+                "on a locked future test period (test ROC 0.7646), resisting the "
+                "Jan 2015 concept shift that collapsed the prior model. It is the "
                 "recommended promotion behind the gated switch."
             ),
             "hero_metrics": {
@@ -731,6 +815,10 @@ def model_switcher_status() -> dict:
     exists on disk, this returns the recommended from→to model chain. The
     serving model is never auto-promoted — promotion requires explicit
     operator approval. No recommendation → no alert.
+
+    The drift report depends only on the persisted score file, so it is
+    computed once per file mtime (the same pattern as _config()); a 1.1M-row
+    report otherwise costs ~5s on every poll.
     """
     import json  # noqa: PLC0415
 
@@ -752,8 +840,12 @@ def model_switcher_status() -> dict:
     drift: dict | None = None
     if DEFAULT_SCORES.exists():
         try:
-            scores = pl.read_parquet(DEFAULT_SCORES)
-            drift = monitor_report(scores)
+            scores_mtime = DEFAULT_SCORES.stat().st_mtime_ns
+            if _switcher_cache.get("_mtime") != scores_mtime:
+                scores = pl.read_parquet(DEFAULT_SCORES)
+                _switcher_cache["_mtime"] = scores_mtime
+                _switcher_cache["report"] = monitor_report(scores)
+            drift = _switcher_cache.get("report")
         except Exception:  # noqa: BLE001 - stale/corrupt score stream
             drift = None
 
@@ -815,14 +907,21 @@ def impact_summary() -> dict:
     p = r.get("protection") or {}
     total_fraud_inr = (r.get("totals") or {}).get("fraud_amount_inr")
     caught_inr = p.get("fraud_amount_caught_inr")
+    # missed INR is stored as USD in the artifact; derive with the same
+    # conversion the verified outcome P&L uses (never a new number).
+    from fingraph_sentinel.outcome_simulator import INR_PER_USD  # noqa: PLC0415
+
+    missed_usd = p.get("fraud_amount_missed_usd")
+    missed_inr = round(float(missed_usd) * INR_PER_USD, 2) if missed_usd else None
     return {
         "available": True,
         "total_protected_inr": caught_inr,
         "monthly_protected_inr": p.get("per_month_protected_inr"),
+        "monthly_missed_inr": p.get("per_month_missed_inr"),
         "fraud_amount_blocked_rate": p.get("recall_by_amount"),
         "fraud_events_blocked_rate": p.get("recall_by_count"),
         "total_fraud_inr": total_fraud_inr,
-        "missed_inr": p.get("fraud_amount_missed_inr"),
+        "missed_inr": missed_inr,
         "model": r.get("model"),
         "split": r.get("split"),
     }
@@ -946,8 +1045,8 @@ def razorpay_flow() -> dict:
     """Describe the demo payment lifecycle for the dashboard/docs."""
     return {
         "flow": [
-            "create order (Razorpay test-mode shape)",
-            "payment event reaches FINGRAPH",
+            "create order (test-mode payment shape)",
+            "payment event enters the risk engine",
             "velocity (strictly-past) computed",
             "XGBoost serve + SHAP -> calibrated action",
             "decision ALLOW / REVIEW / HOLD",
@@ -958,7 +1057,7 @@ def razorpay_flow() -> dict:
             "pay": "POST /api/v1/razorpay/pay",
             "flow": "GET /api/v1/razorpay/flow",
         },
-        "note": "Demo adapter; no live Razorpay keys or network calls.",
+        "note": "Demo adapter; no live payment-provider keys or network calls.",
     }
 
 
@@ -1237,12 +1336,13 @@ def _verified_outcome() -> dict:
     hold_volume_fraction = hold_count / int(bi["totals"]["rows"])
     return {
         "mode": "verified",
-        "model": bi.get("model", "FINGRAPH Velocity v3"),
+        "model": bi.get("model", "baseline-online-v3"),
         "split": bi.get("split", "locked test"),
         "as_of": bi.get("as_of", ""),
         "parity_note": (
             "bytes-identical to records/config — the verified locked-test "
-            "evaluation of FINGRAPH Velocity v3 on 4,877,375 held-out events"
+            "evaluation of baseline-online-v3 (velocity features) on "
+            "4,877,375 held-out events"
         ),
         "fraud_prevented_value": prevented_inr,   # ₹31,018,572.48 (hold+review)
         "missed_fraud_value": missed_inr,          # chargeback loss ₹1,184,238
@@ -1656,8 +1756,8 @@ def helix_demo_error(
         "ok": True,
         "error_type": "timeout",
         "message": (
-            f"PCEC healed a simulated timeout in {healed.get('attempts')} attempt(s); "
-            f"strategy stored as a gene."
+            f"PCEC healed a simulated flaky upstream call in "
+            f"{healed.get('attempts')} attempt(s); strategy stored as a gene."
         ),
         "repair": healed,
         "latency_ms": round((time.monotonic() - t0) * 1000, 2),
@@ -1788,6 +1888,7 @@ def streaming_snapshot(entity: str = "cust", entity_id: str = "") -> dict:
 
 
 _config_cache: dict[str, object] = {}
+_switcher_cache: dict[str, object] = {}
 
 
 def _config() -> dict:
@@ -1802,6 +1903,32 @@ def _config() -> dict:
     _config_cache["_mtime"] = mtime
     _config_cache["cfg"] = cfg
     return cfg
+
+
+# Hero locked-test metrics: the dashboard header shows the VELOCITY-V3
+# locked-test figures (the drift-robust hero, same config the Model Fight
+# Card reads from artifacts/models/baseline-online-v3/model_config.json),
+# while val/backend/training-rows stay the serving model's own. Cached the
+# same way as _config() — one small json read per mtime, never per request.
+_HERO_CFG_PATH = Path("artifacts/models/baseline-online-v3/model_config.json")
+_hero_cache: dict[str, object] = {}
+
+
+def _hero_locked_test() -> dict:
+    import json  # noqa: PLC0415
+
+    mtime = _HERO_CFG_PATH.stat().st_mtime_ns if _HERO_CFG_PATH.exists() else 0
+    if _hero_cache.get("_mtime") == mtime:
+        return dict(_hero_cache.get("mt") or {})  # type: ignore[arg-type]
+    mt: dict = {}
+    if _HERO_CFG_PATH.exists():
+        try:
+            mt = dict(json.loads(_HERO_CFG_PATH.read_text()).get("metrics_test_locked") or {})
+        except Exception:  # noqa: BLE001 - corrupt hero config => empty
+            mt = {}
+    _hero_cache["_mtime"] = mtime
+    _hero_cache["mt"] = mt
+    return mt
 
 
 def _safe_review_decision(event: PaymentEvent) -> RiskDecision:

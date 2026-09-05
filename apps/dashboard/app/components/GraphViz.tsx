@@ -18,7 +18,7 @@ export default function GraphViz() {
     setLoading(true);
     setErr("");
     try {
-      setGraph(await fetchGraphSample(140));
+      setGraph(await fetchGraphSample(90));
     } catch (e) {
       setErr(e instanceof Error ? e.message : "graph sample unreachable");
     } finally {

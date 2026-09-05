@@ -33,7 +33,9 @@ export default function MetricsStrip({ status }: { status: ModelStatus | null })
         <span className="metric-k">test ROC-AUC</span>
       </div>
       <div className="metric">
-        <span className="metric-v">{fmt(t["ap"] as number)}</span>
+        <span className="metric-v">
+          {fmt((t["average_precision"] as number) ?? (t["ap"] as number))}
+        </span>
         <span className="metric-k">test avg precision</span>
       </div>
       <div className="metric">
