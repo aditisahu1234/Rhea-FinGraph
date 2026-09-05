@@ -1,0 +1,218 @@
+{
+  "val": {
+    "trigger": {
+      "trigger": "YES",
+      "score": 0.3613,
+      "psi_warn": 0.25,
+      "z_threshold": 3.0,
+      "n_features": 12,
+      "n_culprits": 5,
+      "culprits": [
+        "amount_log1p",
+        "hour_sin",
+        "is_night",
+        "channel_swipe",
+        "channel_chip"
+      ],
+      "reasons": [
+        "5 feature(s) drifted: amount_log1p, hour_sin, is_night, channel_swipe, channel_chip",
+        "feature-level drift detected -- retrain to recover ranking power (level monitor is blind to this)"
+      ]
+    },
+    "features": [
+      {
+        "feature": "amount_log1p",
+        "ref_mean": 3.1335954709066542,
+        "obs_mean": 2.961479421726583,
+        "psi": 0.07367532003831509,
+        "z": -17.13695140589307
+      },
+      {
+        "feature": "hour_sin",
+        "ref_mean": -0.13398723706507826,
+        "obs_mean": -0.08711972977208214,
+        "psi": 0.013196319381673633,
+        "z": 11.545903352435099
+      },
+      {
+        "feature": "hour_cos",
+        "ref_mean": -0.22361274902600362,
+        "obs_mean": -0.23273246375052264,
+        "psi": 0.011874608050652793,
+        "z": -2.3874916425187775
+      },
+      {
+        "feature": "is_weekend",
+        "ref_mean": 0.28196,
+        "obs_mean": 0.28923333333333334,
+        "psi": 0.0002592914630174372,
+        "z": 2.799793808658208
+      },
+      {
+        "feature": "is_night",
+        "ref_mean": 0.09964,
+        "obs_mean": 0.07056666666666667,
+        "psi": 0.0,
+        "z": -16.81243039365013
+      },
+      {
+        "feature": "channel_swipe",
+        "ref_mean": 0.99718,
+        "obs_mean": 0.34596666666666664,
+        "psi": 4.236149439265036,
+        "z": -2127.0249168886685
+      },
+      {
+        "feature": "channel_chip",
+        "ref_mean": 0.0,
+        "obs_mean": 0.6519333333333334,
+        "psi": 0.0,
+        "z": 651933333.3333334
+      },
+      {
+        "feature": "channel_online",
+        "ref_mean": 0.00282,
+        "obs_mean": 0.0021,
+        "psi": 0.0,
+        "z": -2.351699300014089
+      },
+      {
+        "feature": "had_payment_error",
+        "ref_mean": 0.011,
+        "obs_mean": 0.010866666666666667,
+        "psi": 0.0,
+        "z": -0.22141389688983676
+      },
+      {
+        "feature": "merch_freq_share",
+        "ref_mean": 0.0,
+        "obs_mean": 0.0,
+        "psi": 0.0,
+        "z": 0.0
+      },
+      {
+        "feature": "merch_fraud_rate_prior",
+        "ref_mean": 0.0012345400173217058,
+        "obs_mean": 0.0012345400173217058,
+        "psi": 0.0,
+        "z": 0.0
+      },
+      {
+        "feature": "mcc_freq_share",
+        "ref_mean": 0.0,
+        "obs_mean": 0.0,
+        "psi": 0.0,
+        "z": 0.0
+      }
+    ]
+  },
+  "test": {
+    "trigger": {
+      "trigger": "YES",
+      "score": 0.4844,
+      "psi_warn": 0.25,
+      "z_threshold": 3.0,
+      "n_features": 12,
+      "n_culprits": 7,
+      "culprits": [
+        "amount_log1p",
+        "hour_sin",
+        "hour_cos",
+        "is_night",
+        "channel_swipe",
+        "channel_chip",
+        "channel_online"
+      ],
+      "reasons": [
+        "7 feature(s) drifted: amount_log1p, hour_sin, hour_cos, is_night, channel_swipe, channel_chip, channel_online",
+        "feature-level drift detected -- retrain to recover ranking power (level monitor is blind to this)"
+      ]
+    },
+    "features": [
+      {
+        "feature": "amount_log1p",
+        "ref_mean": 3.1335954709066542,
+        "obs_mean": 2.9521801036341855,
+        "psi": 0.07888116822875403,
+        "z": -18.06284973447156
+      },
+      {
+        "feature": "hour_sin",
+        "ref_mean": -0.13398723706507826,
+        "obs_mean": -0.08496854381291125,
+        "psi": 0.011811502041335636,
+        "z": 12.07585227893613
+      },
+      {
+        "feature": "hour_cos",
+        "ref_mean": -0.22361274902600362,
+        "obs_mean": -0.23822735873057366,
+        "psi": 0.012846516832652033,
+        "z": -3.8260252192455506
+      },
+      {
+        "feature": "is_weekend",
+        "ref_mean": 0.28196,
+        "obs_mean": 0.28813333333333335,
+        "psi": 0.0001870073600333755,
+        "z": 2.3763602812259452
+      },
+      {
+        "feature": "is_night",
+        "ref_mean": 0.09964,
+        "obs_mean": 0.07073333333333333,
+        "psi": 0.0,
+        "z": -16.71605094860513
+      },
+      {
+        "feature": "channel_swipe",
+        "ref_mean": 0.99718,
+        "obs_mean": 0.20606666666666668,
+        "psi": 5.709460309710973,
+        "z": -2583.9731558775175
+      },
+      {
+        "feature": "channel_chip",
+        "ref_mean": 0.0,
+        "obs_mean": 0.7939333333333334,
+        "psi": 0.0,
+        "z": 793933333.3333334
+      },
+      {
+        "feature": "channel_online",
+        "ref_mean": 0.00282,
+        "obs_mean": 0.0,
+        "psi": 0.0,
+        "z": -9.210822258388514
+      },
+      {
+        "feature": "had_payment_error",
+        "ref_mean": 0.011,
+        "obs_mean": 0.010266666666666667,
+        "psi": 0.0,
+        "z": -1.2177764328941079
+      },
+      {
+        "feature": "merch_freq_share",
+        "ref_mean": 0.0,
+        "obs_mean": 0.0,
+        "psi": 0.0,
+        "z": 0.0
+      },
+      {
+        "feature": "merch_fraud_rate_prior",
+        "ref_mean": 0.0012345400173217058,
+        "obs_mean": 0.0012345400173217058,
+        "psi": 0.0,
+        "z": 0.0
+      },
+      {
+        "feature": "mcc_freq_share",
+        "ref_mean": 0.0,
+        "obs_mean": 0.0,
+        "psi": 0.0,
+        "z": 0.0
+      }
+    ]
+  }
+}

@@ -1,0 +1,94 @@
+{
+  "model_name": "xgboost_velocity_v3",
+  "backend": "xgboost",
+  "model_file": "model.json",
+  "device_used": "cpu",
+  "created_at": "2026-08-29T16:56:00.921342+00:00",
+  "feature_columns": [
+    "amount_log1p",
+    "hour_sin",
+    "hour_cos",
+    "is_weekend",
+    "is_night",
+    "channel_swipe",
+    "channel_chip",
+    "channel_online",
+    "had_payment_error",
+    "merch_freq_share",
+    "merch_fraud_rate_prior",
+    "mcc_freq_share",
+    "cust_v_1h_count",
+    "cust_v_1h_amount",
+    "cust_v_24h_count",
+    "cust_v_24h_amount",
+    "cust_v_24h_distinct_merchants",
+    "cust_v_7d_count",
+    "cust_v_7d_amount",
+    "cust_v_7d_distinct_merchants",
+    "card_v_1h_count",
+    "card_v_1h_amount",
+    "card_v_24h_count",
+    "card_v_24h_amount",
+    "card_v_7d_count",
+    "card_v_7d_amount",
+    "merch_v_24h_count",
+    "merch_v_7d_count",
+    "device_v_24h_count",
+    "device_v_24h_amount",
+    "device_v_7d_count",
+    "device_v_7d_amount",
+    "cust_txn_count_prior",
+    "cust_amount_mean_prior",
+    "cust_time_since_prev_log",
+    "cust_prev_amount_ratio",
+    "card_txn_count_prior",
+    "card_amount_mean_prior",
+    "card_time_since_prev_log",
+    "merch_txn_count_prior"
+  ],
+  "feature_set": "velocity",
+  "calibration_scale_pos_weight": 650.21,
+  "thresholds": {
+    "hold": 0.12412769673717707,
+    "review": 0.040943451498730354
+  },
+  "policy": {
+    "hold_threshold": 0.124128,
+    "review_threshold": 0.040943,
+    "fallback_used": true,
+    "val_action_counts": {
+      "allow": 989500,
+      "review": 10000,
+      "hold": 500
+    },
+    "val_hold_precision": 0.278,
+    "val_review_band_precision": 0.0367
+  },
+  "metrics_validation": {
+    "rows": 4877380,
+    "frauds": 6860,
+    "roc_auc": 0.8224,
+    "average_precision": 0.0642,
+    "evaluated_on": "full validation.parquet (4,877,380 rows)"
+  },
+  "metrics_test_locked": {
+    "rows": 4877375,
+    "frauds": 4833,
+    "roc_auc": 0.7646,
+    "average_precision": 0.0038,
+    "evaluated_on": "full test.parquet (4,877,375 rows)",
+    "action_counts": {
+      "allow": 2253863,
+      "review": 282052,
+      "hold": 2341460
+    },
+    "caught_frauds_by_action": {
+      "allow": 550,
+      "review": 153,
+      "hold": 4130
+    }
+  },
+  "training_rows": 2500000,
+  "fit_seconds": 68.8,
+  "metrics_source": "trained capped 2.5M rows (Mac-cool), rescored full val/test 2026-08-29"
+}

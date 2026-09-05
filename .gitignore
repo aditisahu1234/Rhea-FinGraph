@@ -27,6 +27,13 @@ data/processed/*
 artifacts/*
 !artifacts/.gitkeep
 !artifacts/pitch/
+# Committed serving models (README: pre-trained artifacts are committed).
+# A fresh clone must be able to run `make api` and see real metrics.
+!artifacts/models/
+!artifacts/models/baseline-online-xgb/
+!artifacts/models/baseline-online-v3/
+# bulky per-run analysis outputs are not needed to serve — keep them local
+artifacts/models/*/*.parquet
 volumes/
 mlruns/
 phoenix/

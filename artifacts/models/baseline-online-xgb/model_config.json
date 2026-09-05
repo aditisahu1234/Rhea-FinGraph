@@ -1,0 +1,64 @@
+{
+  "model_name": "xgboost_online_v2",
+  "backend": "xgboost",
+  "model_file": "model.json",
+  "device_used": "cuda",
+  "created_at": "2026-08-26T13:52:57.682812+00:00",
+  "feature_columns": [
+    "amount_log1p",
+    "hour_sin",
+    "hour_cos",
+    "is_weekend",
+    "is_night",
+    "channel_swipe",
+    "channel_chip",
+    "channel_online",
+    "had_payment_error",
+    "merch_freq_share",
+    "merch_fraud_rate_prior",
+    "mcc_freq_share"
+  ],
+  "feature_set": "online",
+  "calibration_scale_pos_weight": 809.02,
+  "thresholds": {
+    "hold": 0.001625791817699639,
+    "review": 0.0015936916632287807
+  },
+  "policy": {
+    "hold_threshold": 0.001626,
+    "review_threshold": 0.001594,
+    "fallback_used": true,
+    "val_action_counts": {
+      "allow": 4820541,
+      "review": 53364,
+      "hold": 3475
+    },
+    "val_hold_precision": 0.1306,
+    "val_review_band_precision": 0.0464
+  },
+  "metrics_validation": {
+    "average_precision": 0.0489,
+    "roc_auc": 0.8937
+  },
+  "metrics_test_locked": {
+    "rows": 4877375,
+    "frauds": 4833,
+    "average_precision": 0.0015,
+    "roc_auc": 0.5967,
+    "recall_at_precision_25": 0.0,
+    "recall_at_precision_50": 0.0,
+    "recall_at_precision_80": 0.0,
+    "action_counts": {
+      "allow": 4823037,
+      "review": 51501,
+      "hold": 2837
+    },
+    "caught_frauds_by_action": {
+      "allow": 4772,
+      "review": 53,
+      "hold": 8
+    }
+  },
+  "training_rows": 14632145,
+  "fit_seconds": 69.4
+}

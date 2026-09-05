@@ -1,0 +1,28 @@
+{
+  "actions": [
+    "rates recovered -> cleared threshold override",
+    "queued retrain: drift trigger 0.4844 (Layer 5)"
+  ],
+  "drift": {
+    "score": 0.4844,
+    "trigger": "YES"
+  },
+  "hot_merchants": [],
+  "memory": {
+    "durable": false,
+    "durable_file": "artifacts/healing/failure_memory.jsonl",
+    "episodes": 0,
+    "failures": 0,
+    "false_hold": 0,
+    "false_hold_rate": 0.0,
+    "hot_merchants": 0,
+    "miss_rate": 0.0,
+    "missed_fraud": 0,
+    "recent": []
+  },
+  "model_version": "xgboost_online_v2",
+  "retrain_queue_len": 1,
+  "retrain_queued": true,
+  "run_at": "2026-08-29T09:44:20Z",
+  "threshold_overrides": {}
+}
