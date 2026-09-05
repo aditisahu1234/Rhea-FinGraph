@@ -1,6 +1,6 @@
 "use client";
 
-// GraphPanel — Layer 2 graph store. Renders the REAL local graph pipeline
+// GraphPanel — graph store. Renders the REAL local graph pipeline
 // (nodes/edges/fraud edges per temporal snapshot, GNN config) plus an HONEST
 // Neo4j connectivity card: offline locally until `make ingest-graph` runs.
 // No invented graph data — everything comes from /api/v1/graph/status.
@@ -50,7 +50,7 @@ export default function GraphPanel() {
   return (
     <div className="panel">
       <div className="panel-head">
-        <h2 className="panel-title">Graph store · Layer 2</h2>
+        <h2 className="panel-title">Graph store</h2>
         <span className={`pill ${neo4j?.reachable ? "ok" : "alert"}`}>
           {neo4j?.reachable ? "NEO4J ONLINE" : "NEO4J OFFLINE · LOCAL PIPELINE"}
         </span>
@@ -144,7 +144,7 @@ export default function GraphPanel() {
           {graph.gnn && (
             <div className="gnn-row">
               <div className="gnn-head">
-                <span className="tag">Temporal GNN · Layer 3</span>
+                <span className="tag">Temporal GNN</span>
                 <span className="muted">
                   {graph.gnn.architecture} · {fmt(graph.gnn.params ?? null)} params ·{" "}
                   {graph.gnn.epochs} epochs · {graph.gnn.fit_seconds}s on {graph.gnn.device_used}

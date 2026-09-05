@@ -1,6 +1,6 @@
 "use client";
 
-// GraphViz — renders the local temporal graph snapshot (Layer 2) as a live
+// GraphViz — renders the local temporal graph snapshot as a live
 // force-directed canvas. Data always comes from /api/v1/graph/sample (real
 // local snapshot); nothing invented. Rendering is delegated to the shared
 // ForceGraphCanvas so the local view and the live Neo4j view look identical.

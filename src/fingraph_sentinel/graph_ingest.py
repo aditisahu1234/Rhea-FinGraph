@@ -215,8 +215,20 @@ def main():
     )
     parser.add_argument("--url", default="bolt://localhost:7687")
     parser.add_argument("--user", default="neo4j")
-    parser.add_argument("--password", default="change-me-local-only")
+    parser.add_argument(
+        "--password",
+        default=None,
+        help="Neo4j password (defaults to FINGRAPH_NEO4J_PASSWORD / NEO4J_PASSWORD from settings/.env)",
+    )
     args = parser.parse_args()
+
+    if args.password is None:
+        try:
+            from fingraph_sentinel.config import get_settings
+
+            args.password = get_settings().neo4j_password
+        except Exception:  # noqa: BLE001 - fall back to the historical default
+            args.password = "change-me-local-only"
 
     if args.all_splits:
         args.splits = ["train", "val", "test"]

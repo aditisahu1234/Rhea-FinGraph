@@ -206,7 +206,7 @@ export function fetchModelStatus(): Promise<ModelStatus> {
   return getJSON<ModelStatus>("/api/v1/model/status");
 }
 
-// ---- Razorpay-relevant business operating point (LIMITATION #1) --------
+// ---- Payment-relevant business operating point (LIMITATION #1) --------
 
 export interface BusinessImpact {
   available: boolean;
@@ -259,7 +259,7 @@ export function fetchImpactSummary(): Promise<ImpactSummary> {
   return getJSON<ImpactSummary>("/api/v1/impact/summary");
 }
 
-// ---- Razorpay demo adapter (LIMITATION #2) -----------------------------
+// ---- Payment demo adapter (LIMITATION #2) -----------------------------
 
 export interface DemoOrder {
   order_id: string;
@@ -298,7 +298,7 @@ export async function createDemoOrder(
   amountInr: string,
   merchantId: string
 ): Promise<DemoOrder> {
-  const res = await fetch(`${API_BASE}/api/v1/razorpay/order`, {
+  const res = await fetch(`${API_BASE}/api/v1/payment/order`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ amount_inr: amountInr, merchant_id: merchantId }),
@@ -308,7 +308,7 @@ export async function createDemoOrder(
 }
 
 export async function payDemoOrder(orderId: string): Promise<DemoWebhook> {
-  const res = await fetch(`${API_BASE}/api/v1/razorpay/pay`, {
+  const res = await fetch(`${API_BASE}/api/v1/payment/pay`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ order_id: orderId }),
@@ -317,11 +317,11 @@ export async function payDemoOrder(orderId: string): Promise<DemoWebhook> {
   return (await res.json()) as DemoWebhook;
 }
 
-export function fetchRazorpayFlow(): Promise<{ flow: string[]; endpoints: Record<string, string> }> {
-  return getJSON("/api/v1/razorpay/flow");
+export function fetchPaymentFlow(): Promise<{ flow: string[]; endpoints: Record<string, string> }> {
+  return getJSON("/api/v1/payment/flow");
 }
 
-// ---- Simulate a Razorpay webhook (sprint Hour 0-1) ----------------------
+// ---- Simulate a Payment webhook (sprint Hour 0-1) ----------------------
 
 export interface WebhookRisk {
   model_version: string;
@@ -346,10 +346,10 @@ export interface WebhookResponse {
   };
 }
 
-export async function sendRazorpayWebhook(
+export async function sendPaymentWebhook(
   payload: Record<string, unknown>
 ): Promise<WebhookResponse> {
-  const res = await fetch(`${API_BASE}/api/v1/razorpay/webhook`, {
+  const res = await fetch(`${API_BASE}/api/v1/payment/webhook`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -361,9 +361,9 @@ export async function sendRazorpayWebhook(
   return (await res.json()) as WebhookResponse;
 }
 
-// ---- Razorpay synthetic event (LIMITATION #5: contract != training set) --
+// ---- Payment synthetic event (LIMITATION #5: contract != training set) --
 
-export interface RazorpayEventResponse {
+export interface PaymentEventResponse {
   received: boolean;
   decision: {
     fraud_probability: number;
@@ -391,10 +391,10 @@ export interface RazorpayEventResponse {
   };
 }
 
-export async function sendRazorpayEvent(
+export async function sendPaymentEvent(
   payload: Record<string, unknown>
-): Promise<RazorpayEventResponse> {
-  const res = await fetch(`${API_BASE}/api/v1/razorpay/event`, {
+): Promise<PaymentEventResponse> {
+  const res = await fetch(`${API_BASE}/api/v1/payment/event`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -403,7 +403,7 @@ export async function sendRazorpayEvent(
     const err = await res.json().catch(() => ({}));
     throw new Error(`event -> ${res.status}: ${JSON.stringify(err)}`);
   }
-  return (await res.json()) as RazorpayEventResponse;
+  return (await res.json()) as PaymentEventResponse;
 }
 
 export function fetchHelixDrift(): Promise<HelixDriftReport> {

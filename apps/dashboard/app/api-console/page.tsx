@@ -25,6 +25,7 @@ interface Endpoint {
   fields: Field[];
   confirm: (resp: unknown) => string; // plain confirmation derived from response
   hint?: string;
+  query?: boolean; // true when the backend reads these as ?query params, not body
 }
 
 // ---- helper: pretty-format any response to a readable string -------------
@@ -52,7 +53,7 @@ function summary(resp: unknown): string {
 
 const ENDPOINTS: Endpoint[] = [
   {
-    path: "/api/v1/razorpay/order",
+    path: "/api/v1/payment/order",
     method: "POST",
     title: "Create a payment order",
     whatToInput: "Enter the order amount (in ₹) and, optionally, the merchant, customer and card to use.",
@@ -68,7 +69,7 @@ const ENDPOINTS: Endpoint[] = [
     },
   },
   {
-    path: "/api/v1/razorpay/pay",
+    path: "/api/v1/payment/pay",
     method: "POST",
     title: "Score a payment",
     whatToInput: "Paste the order_id from the created order to score it through the model.",
@@ -79,7 +80,7 @@ const ENDPOINTS: Endpoint[] = [
     },
   },
   {
-    path: "/api/v1/razorpay/webhook",
+    path: "/api/v1/payment/webhook",
     method: "POST",
     title: "Receive a payment webhook",
     whatToInput: "Enter the payment event details. The webhook is converted to an internal event and scored.",
@@ -141,6 +142,7 @@ const ENDPOINTS: Endpoint[] = [
   {
     path: "/api/v1/helix/demo-error",
     method: "POST",
+    query: true,
     title: "Trigger a failure (PCEC heals it)",
     whatToInput: "Pick the failure kind. The PCEC engine classifies it, applies a real repair (per-merchant threshold tighten/relax for fraud/legit errors) and stores a gene. Latency is measured.",
     fields: [
@@ -156,6 +158,7 @@ const ENDPOINTS: Endpoint[] = [
   {
     path: "/api/v1/helix/self-play",
     method: "POST",
+    query: true,
     title: "Run self-play (attacks -> repairs)",
     whatToInput: "Push N attack scenarios through the real model. Attacks below the reaction-ratio bar become missed_fraud episodes PCEC repairs; survival + repair latency are measured from this run.",
     fields: [
@@ -249,13 +252,26 @@ export default function APIConsole() {
     const id = ep.path;
     setBusy((b) => ({ ...b, [id]: true }));
     try {
-      // map form fields -> JSON body (skip empties)
-      const body: Record<string, unknown> = {};
-      for (const f of ep.fields) {
-        const val = (values[id] || {})[f.key] ?? f.default ?? "";
-        if (val !== "") body[f.key] = f.type === "number" ? Number(val) : val;
+      let target = ep.path;
+      let body: Record<string, unknown> | undefined;
+      if (ep.query) {
+        // backend reads ?key=value (demo-error, self-play, ...): append fields
+        const qs = new URLSearchParams();
+        for (const f of ep.fields) {
+          const val = (values[id] || {})[f.key] ?? f.default ?? "";
+          if (val !== "") qs.set(f.key, val);
+        }
+        const q = qs.toString();
+        if (q) target = `${ep.path}?${q}`;
+      } else {
+        // map form fields -> JSON body (skip empties)
+        body = {};
+        for (const f of ep.fields) {
+          const val = (values[id] || {})[f.key] ?? f.default ?? "";
+          if (val !== "") body[f.key] = f.type === "number" ? Number(val) : val;
+        }
       }
-      const resp = await call(ep.method, ep.path, ep.fields.length ? body : undefined);
+      const resp = await call(ep.method, target, body);
       setResults((r) => ({ ...r, [id]: { ok: true, msg: ep.confirm(resp), body: resp } }));
     } catch (e) {
       setResults((r) => ({ ...r, [id]: { ok: false, msg: e instanceof Error ? e.message : "request failed", body: null } }));

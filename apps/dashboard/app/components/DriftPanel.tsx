@@ -1,6 +1,6 @@
 "use client";
 
-// DriftPanel — Helix Layer 5 self-healing memory. Shows the retrain trigger
+// DriftPanel — Helix self-healing memory. Shows the retrain trigger
 // and per-feature PSI / mean-shift drift so the operator sees *why* the model
 // may be decaying, per feature, rather than a flat aggregate.
 
@@ -17,7 +17,7 @@ export default function DriftPanel({ report }: { report: HelixDriftReport | null
   if (!report) {
     return (
       <div className="panel">
-        <h2 className="panel-title">Helix memory · Layer 5</h2>
+        <h2 className="panel-title">Helix memory</h2>
         <p className="empty">No drift report loaded.</p>
       </div>
     );
@@ -29,7 +29,7 @@ export default function DriftPanel({ report }: { report: HelixDriftReport | null
   return (
     <div className="panel">
       <div className="panel-head">
-        <h2 className="panel-title">Helix memory · Layer 5</h2>
+        <h2 className="panel-title">Helix memory</h2>
         <span
           className={`pill ${report.trigger === "YES" ? "alert" : "ok"}`}
         >

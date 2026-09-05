@@ -1,20 +1,20 @@
 "use client";
 
-// RazorpayDemoPanel — LIMITATION #2 fix.
-// Wraps the existing FINGRAPH inference engine in a Razorpay-style lifecycle:
+// PaymentDemoPanel — LIMITATION #2 fix.
+// Wraps the existing FINGRAPH inference engine in a payment-style lifecycle:
 // create test order -> payment event -> velocity -> XGBoost -> SHAP ->
 // ALLOW / REVIEW / HOLD -> webhook -> audit. Demonstrable live against the
-// real API without rebuilding the model or using live Razorpay keys.
+// real API without rebuilding the model or using live Payment keys.
 
 import { useState } from "react";
 import {
   createDemoOrder,
   payDemoOrder,
-  sendRazorpayEvent,
-  sendRazorpayWebhook,
+  sendPaymentEvent,
+  sendPaymentWebhook,
   type DemoOrder,
   type DemoWebhook,
-  type RazorpayEventResponse,
+  type PaymentEventResponse,
   type WebhookResponse,
 } from "../lib/api";
 
@@ -31,14 +31,14 @@ const ACTION_TONE: Record<string, string> = {
   hold: "demo-hold",
 };
 
-export default function RazorpayDemoPanel() {
+export default function PaymentDemoPanel() {
   const [amount, setAmount] = useState("1999.00");
   const [merchant, setMerchant] = useState(MERCHANTS[0].id);
   const [order, setOrder] = useState<DemoOrder | null>(null);
   const [hook, setHook] = useState<DemoWebhook | null>(null);
   const [wh, setWh] = useState<WebhookResponse | null>(null);
   const [whAmount, setWhAmount] = useState("199900"); // paise
-  const [rz, setRz] = useState<RazorpayEventResponse | null>(null);
+  const [rz, setRz] = useState<PaymentEventResponse | null>(null);
   const [rzMethod, setRzMethod] = useState("upi");
   const [rzAmount, setRzAmount] = useState("125000"); // paise
   const [busy, setBusy] = useState(false);
@@ -76,7 +76,7 @@ export default function RazorpayDemoPanel() {
     setErr("");
     setBusy(true);
     try {
-      const r = await sendRazorpayWebhook({
+      const r = await sendPaymentWebhook({
         order_id: `order_wh_${Date.now()}`,
         payment_id: `pay_wh_${Date.now()}`,
         amount: Number(whAmount) || 0,
@@ -98,7 +98,7 @@ export default function RazorpayDemoPanel() {
     setErr("");
     setBusy(true);
     try {
-      const r = await sendRazorpayEvent({
+      const r = await sendPaymentEvent({
         payment_id: `pay_${rzMethod}_${Date.now()}`,
         order_id: `order_${Date.now()}`,
         merchant_id: merchant,
@@ -126,11 +126,11 @@ export default function RazorpayDemoPanel() {
   return (
     <div className="panel">
       <div className="panel-head">
-        <h2 className="panel-title">Razorpay payment · risk demo</h2>
-        <span className="pill ok">TEST-MODE ADAPTER · NO LIVE KEYS</span>
+        <h2 className="panel-title">Payment flow · risk demo</h2>
+        <span className="pill ok">LIVE SCORING · SIMULATED EVENTS</span>
       </div>
       <p className="panel-sub">
-        A Razorpay-style flow through the existing engine: create a test
+        A payment-style flow through the existing engine: create a test
         order, then the payment event enters FINGRAPH → velocity → XGBoost →
         SHAP → ALLOW/REVIEW/HOLD → webhook → audit. Reuses the exact same
         scoring path as live traffic; nothing is mocked at the model layer.
@@ -265,7 +265,7 @@ export default function RazorpayDemoPanel() {
       </div>
 
       <div className="demo-webhook">
-        <h3 className="subhead">…or send a full Razorpay event (contract ≠ training set)</h3>
+        <h3 className="subhead">…or send a full Payment event (contract ≠ training set)</h3>
         <div className="demo-controls">
           <label>
             Method
@@ -285,7 +285,7 @@ export default function RazorpayDemoPanel() {
             />
           </label>
           <button onClick={fireEvent} disabled={busy}>
-            {busy ? "…" : "Score Razorpay event"}
+            {busy ? "…" : "Score Payment event"}
           </button>
         </div>
         {rz && (

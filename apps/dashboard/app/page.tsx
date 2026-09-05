@@ -1,11 +1,10 @@
 "use client";
 
-// Rhea FinGraph dashboard — Layer 0 vertical slice.
-// Live transaction scoring + SHAP explainability + Helix (Layer 5) drift.
+// Rhea FinGraph dashboard — live transaction scoring + SHAP explainability
+// + Helix self-healing memory.
 
 import { useEffect, useState } from "react";
 import {
-  API_BASE,
   fetchAuditHealth,
   fetchAuditRecent,
   fetchAuditSummary,
@@ -33,7 +32,7 @@ import ModelSwitcherPanel from "./components/ModelSwitcherPanel";
 import MetricsStrip from "./components/MetricsStrip";
 import BusinessImpactPanel from "./components/BusinessImpactPanel";
 import FinancialImpactCard from "./components/FinancialImpactCard";
-import RazorpayDemoPanel from "./components/RazorpayDemoPanel";
+import PaymentDemoPanel from "./components/PaymentDemoPanel";
 import AttackSimulatorPanel from "./components/AttackSimulatorPanel";
 import OutcomePanel from "./components/OutcomePanel";
 
@@ -122,7 +121,7 @@ export default function Home() {
         <section className="panel score-panel">
           <div className="panel-head">
             <h2 className="panel-title">Live scoring</h2>
-            <span className="muted">Layer 0 · {API_BASE}</span>
+            <span className="muted">score a transaction in real time</span>
           </div>
           <Scorer />
         </section>
@@ -137,7 +136,7 @@ export default function Home() {
         </section>
       </div>
 
-      <RazorpayDemoPanel />
+      <PaymentDemoPanel />
 
       <AttackSimulatorPanel />
 

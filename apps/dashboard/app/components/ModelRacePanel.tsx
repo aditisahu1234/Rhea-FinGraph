@@ -1,6 +1,6 @@
 "use client";
 
-// ModelRacePanel — Layer 4 fight card. Real rows from the recorded
+// ModelRacePanel — fight card. Real rows from the recorded
 // model_config.json metrics on the locked test split (same events for every
 // model that has test_roc). Exposes exactly what the pitch needs: the
 // serving baseline's decay vs the velocity candidate's test ROC, and the
@@ -58,7 +58,7 @@ export default function ModelRacePanel() {
   return (
     <div className="panel">
       <div className="panel-head">
-        <h2 className="panel-title">Model fight card · Layer 4</h2>
+        <h2 className="panel-title">Model fight card</h2>
         <span className="pill ok">LOCKED TEST SPLIT · SAME EVENTS</span>
       </div>
       <p className="panel-sub">

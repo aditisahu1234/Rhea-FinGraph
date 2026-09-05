@@ -812,6 +812,7 @@ def impact_summary() -> dict:
     }
 
 
+@app.post("/api/v1/payment/order", tags=["payment"])
 @app.post("/api/v1/razorpay/order", tags=["razorpay"])
 def razorpay_create_order(body: dict) -> dict:
     """Create a payment order through the payment adapter.
@@ -835,6 +836,7 @@ def razorpay_create_order(body: dict) -> dict:
         return {"error": "invalid_amount", "detail": str(exc)}
 
 
+@app.post("/api/v1/payment/pay", tags=["payment"])
 @app.post("/api/v1/razorpay/pay", tags=["razorpay"])
 def razorpay_pay(body: dict) -> dict:
     """Score one order and return the webhook decision.
@@ -922,6 +924,7 @@ def razorpay_pay(body: dict) -> dict:
     return webhook
 
 
+@app.get("/api/v1/payment/flow", tags=["payment"])
 @app.get("/api/v1/razorpay/flow", tags=["razorpay"])
 def razorpay_flow() -> dict:
     """Describe the demo payment lifecycle for the dashboard/docs."""
@@ -943,6 +946,7 @@ def razorpay_flow() -> dict:
     }
 
 
+@app.post("/api/v1/payment/webhook", tags=["payment"])
 @app.post("/api/v1/razorpay/webhook", tags=["razorpay"])
 def razorpay_webhook(body: dict) -> dict:
     """Receive a payment webhook and score it.
@@ -1002,6 +1006,7 @@ def razorpay_webhook(body: dict) -> dict:
     }
 
 
+@app.post("/api/v1/payment/event", tags=["payment"])
 @app.post("/api/v1/razorpay/event", tags=["razorpay"])
 def razorpay_event(body: dict) -> dict:
     """Accept a full payment event and score it.

@@ -1,7 +1,7 @@
 "use client";
 
 // ModelSwitcherPanel — drift-aware model recommendation with gated promotion
-// (Layer 4). LIMITATION #9 framing: the switcher only RECOMMENDS; it never
+// LIMITATION #9 framing: the switcher only RECOMMENDS; it never
 // silently promotes. The model registry stays pinned to the serving model
 // until an operator/CI passes the promotion gate. Shows the honest current
 // state: no decision yet = no alert; if drift was ever detected and a better

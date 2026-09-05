@@ -1,6 +1,6 @@
 "use client";
 
-// AuditPanel — Layer 6 compliance audit + observability.
+// AuditPanel — compliance audit + observability.
 // Shows a tamper-evident record of every scored decision (hash-chained),
 // the audit store health, and whether the hash chain passes integrity
 // verification (i.e. nothing has been retroactively edited or deleted).
@@ -48,7 +48,7 @@ export default function AuditPanel({
   return (
     <div className="panel">
       <div className="panel-head">
-        <h2 className="panel-title">Audit ledger · Layer 6</h2>
+        <h2 className="panel-title">Audit ledger</h2>
         <div className="audit-pills">
           <span
             className={`pill ${integrityOk === false ? "alert" : "ok"}`}

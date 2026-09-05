@@ -1,6 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -14,7 +15,12 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     neo4j_url: str = "bolt://localhost:7687"
     neo4j_username: str = "neo4j"
-    neo4j_password: str = "change-me-local-only"
+    # Accept either the FINGRAPH_-prefixed name or the bare Compose-style name
+    # (the shared .env uses the latter, so a live local Neo4j is reachable).
+    neo4j_password: str = Field(
+        default="change-me-local-only",
+        validation_alias=AliasChoices("FINGRAPH_NEO4J_PASSWORD", "NEO4J_PASSWORD"),
+    )
     elasticsearch_url: str = "http://localhost:9200"
     helix_url: str = "http://localhost:7842"
 

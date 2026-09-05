@@ -388,12 +388,23 @@ def test_cypher_gateway_rejects_unknown_query() -> None:
 
 
 def test_cypher_gateway_valid_query_handles_offline() -> None:
-    """With no Neo4j up the gateway returns a clean offline payload, not a crash."""
+    """The gateway always returns a clean payload, never a crash.
+
+    When Neo4j is down it reports ``online: False`` with a clear hint; when a
+    live server is reachable (local dev with `.env` creds) it returns live
+    nodes/edges from the real graph. Either way the contract is 200 + a
+    renderable payload, not a 500.
+    """
     r = client.post("/api/v1/graph/cypher", json={"query": "overview"})
     assert r.status_code == 200
     d = r.json()
-    assert d["online"] is False
-    assert "hint" in d and "nodes" in d and "edges" in d
+    assert "online" in d and "nodes" in d and "edges" in d
+    if d["online"]:
+        # live server: real graph rows, hint is an offline-only field
+        assert isinstance(d["nodes"], list) and isinstance(d["edges"], list)
+    else:
+        # offline: explicit hint, empty renderable lists
+        assert "hint" in d and d["nodes"] == [] and d["edges"] == []
 
 
 # ---- Helix Runtime: Gene Map + PCEC engine ---------------------------------

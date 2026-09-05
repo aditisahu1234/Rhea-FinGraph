@@ -1,6 +1,6 @@
 "use client";
 
-// StreamingPanel — Layer 1 real-time streaming velocity store.
+// StreamingPanel — real-time streaming velocity store.
 // Shows the rolling-window velocity/cumulative-prior store health and lets an
 // operator inspect the velocity snapshot for any entity (customer/card/merchant/
 // device). Features are strictly-past: the current event never counts toward
@@ -71,7 +71,7 @@ export default function StreamingPanel() {
   return (
     <div className="panel">
       <div className="panel-head">
-        <h2 className="panel-title">Streaming velocity · Layer 1</h2>
+        <h2 className="panel-title">Streaming velocity</h2>
         <div className="audit-pills">
           <span className={`pill ${live === false ? "alert" : "ok"}`}>
             {live === false ? "STORE DOWN" : "STREAMING"}

@@ -34,6 +34,11 @@ FAILURE_TYPES = ("missed_fraud", "false_hold")
 
 DEFAULT_MEMORY_FILE = Path("artifacts/healing/failure_memory.jsonl")
 
+# Hard cap on episodes kept (most recent N). Locked-test replays can otherwise
+# grow the file past 300 MB and make every memory read (dashboard polls, heal
+# cycles) take tens of seconds. Rotation keeps the newest data and bounds I/O.
+MAX_EPISODES = 200_000
+
 
 def _now_iso() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
@@ -114,10 +119,43 @@ class FailureMemory:
         try:
             with self._path.open("a", encoding="utf-8") as fh:
                 fh.write(line + "\n")
+            self._rotate_if_huge()
         except OSError:
             # Fail-safe: memory must never break the feedback API.
             pass
         return ep
+
+    def _rotate_if_huge(self) -> None:
+        """Drop the oldest half when the file exceeds MAX_EPISODES lines.
+
+        Keeps the newest memory (the most decision-relevant tail) and bounds
+        per-read cost so dashboard polls stay fast even after big replays.
+        A byte gate avoids scanning the file on every append: we only probe
+        when the file is already large (episodes average a few hundred bytes).
+        """
+        if not self._path.exists():
+            return
+        try:
+            if self._path.stat().st_size < 64 * 1024 * 1024:  # 64 MB gate
+                return
+            probe = 0
+            with self._path.open(encoding="utf-8") as fh:
+                for _ in fh:
+                    probe += 1
+                    if probe > MAX_EPISODES:
+                        break
+            if probe <= MAX_EPISODES:
+                return
+            keep = MAX_EPISODES // 2
+            tail = deque(maxlen=keep)
+            with self._path.open(encoding="utf-8") as fh:
+                for line in fh:
+                    if line.strip():
+                        tail.append(line)
+            with self._path.open("w", encoding="utf-8") as fh:
+                fh.writelines(tail)
+        except OSError:
+            pass  # rotation is best-effort; appends never fail
 
     def episodes(self) -> list[Episode]:
         if not self._path.exists():
