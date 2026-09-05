@@ -81,6 +81,22 @@ app = FastAPI(
     ),
 )
 
+# CORS: the dashboard runs on :3001 (Next.js dev server) while the API is on
+# :8000. Without this the browser blocks every fetch as cross-origin and every
+# panel shows "failed to fetch" even though the API responds fine.
+from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3001",
+        "http://127.0.0.1:3001",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # --- Startup seeding: populate audit + streaming + healing stores so the --
 # --- dashboard has data on first load instead of empty panels.          ----
 _SEED_EVENTS = [

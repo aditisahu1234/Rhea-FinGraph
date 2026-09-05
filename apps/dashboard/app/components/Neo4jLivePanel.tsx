@@ -6,7 +6,7 @@
 // force-directed visualizer. Shows an honest OFFLINE state (with the exact
 // setup hint) until Neo4j is reachable — it never fabricates graph data.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { runGraphCypher, type CypherResult } from "../lib/api";
 import ForceGraphCanvas from "./ForceGraphCanvas";
 
@@ -34,6 +34,13 @@ export default function Neo4jLivePanel() {
       setBusy(false);
     }
   }
+
+  // Auto-run the default query once on mount so the live Neo4j graph is
+  // visible without a click (the backend proxy + Neo4j are already up).
+  useEffect(() => {
+    run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const online = result?.online === true;
 
