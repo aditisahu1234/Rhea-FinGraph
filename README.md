@@ -98,6 +98,50 @@ flowchart TB
 
 ---
 
+## 📐 Architecture Documentation — 9 Views
+
+The full buildathon architecture pack lives in [`architecture/`](architecture/README.md) — 9 diagrams, each with a plain-English walkthrough of components, data flow, and honest design decisions. Starting with the complete system, then the 8 sub-architectures:
+
+### 1. Complete System Architecture
+[![Complete System Architecture](architecture/completeArchitecture.png)](architecture/README.md#1-complete-system-architecture)
+The 7-layer end-to-end view: a payment event enters at Layer 0 (interaction), streams through Layers 1-4 (velocity → graph → models → explainability), is monitored and self-healed by Layers 5-6 (Helix + audit), and the decision returns to the operator. **Defense-only:** the system never executes a payment — the merchant makes the final call.
+
+### 2. Interaction & Visualization Architecture
+[![Interaction & Visualization Architecture](architecture/interactionVisualizationArchitecture.png)](architecture/README.md#2-interaction--visualization-architecture)
+Layer 0 — the human interface: Next.js dashboard (18 live panels, port 3001), the no-JSON API console, and (planned) merchant alert surfaces. All data client-side fetched from FastAPI; static fallbacks keep the business-impact numbers on screen even if the API is offline.
+
+### 3. Ingestion & Event Streaming Architecture
+[![Ingestion & Event Streaming Architecture](architecture/ingestionAndEventStreamingArchitecture.png)](architecture/README.md#3-ingestion--event-streaming-architecture)
+Layer 1 — real-time velocity intelligence: FastAPI scoring endpoint + Velocity Store (1h/24h/7d rolling windows per customer/card/merchant/device). **Strictly-past guarantee:** features are read before the event commits — a transaction never contributes to its own risk.
+
+### 4. Entity Resolution & Graph Construction Architecture
+[![Entity Resolution & Graph Construction Architecture](architecture/entityResolutionAndGraphConstructionArchitecture.png)](architecture/README.md#4-entity-resolution--graph-construction-architecture)
+Layer 2 — temporal knowledge graph: 2,000 customers, 100K+ merchants, 6,139 cards, ~24.39M PURCHASED edges, 30 monthly snapshots. Live Neo4j gateway (`/api/v1/graph/cypher`) with a whitelisted read-only query set.
+
+### 5. Temporal Heterogeneous GNN Architecture
+[![Temporal HeteroGNN Architecture](architecture/temporalHeteroGNNArchitecture.png)](architecture/README.md#5-temporal-heterogeneous-gnn-architecture)
+Layer 3's deepest signal — a TeMP-TraG-style Temporal HeteroGNN (~46K params, trained on Kaggle T4, val ROC 0.6272). Presented honestly as the next-lever research result, not the headline model.
+
+### 6. Advanced Risk Decision Intelligence Architecture
+[![Advanced Risk Decision Intelligence Architecture](architecture/advanceRiskDecisionIntelligenceArchitecture.png)](architecture/README.md#6-advanced-risk-decision-intelligence-architecture)
+Layer 4 — the ensemble engine: serving XGBoost (0.466 ms core path), hero Velocity V3 candidate, autoencoder, 4-signal fusion, SHAP/LIME/counterfactual explanations, and EWMA/CUSUM/PSI drift detection driving model switching.
+
+### 7. Helix Self-Healing Architecture
+[![Helix Self-Healing Architecture](architecture/helixArchitecture.png)](architecture/README.md#7-helix-self-healing-architecture)
+Layer 5 — the self-healing loop: 6-stage PCEC engine (Perceive → Construct → Evaluate → Commit → Verify → Gene), SQLite+RL Gene Map with Q-values, HealingEngine threshold mutations, federated export/import, self-play. Repairs change **real** merchant thresholds.
+
+### 8. Compliance Audit Architecture
+[![Compliance Audit Architecture](architecture/compliaceAuditArchitecture.png)](architecture/README.md#8-compliance-audit-architecture)
+Layer 6 — tamper-evident trail: every decision hash-chained (SHA-256 of previous block), append-only, backend-agnostic (Postgres/in-memory fail-safe), verifiable end-to-end via `/api/v1/audit/verify`.
+
+### 9. Data Lake & Feature Store Architecture
+[![Data Lake & Feature Store Architecture](architecture/dataLakeFeatureStoreArchitecture.png)](architecture/README.md#9-data-lake--feature-store-architecture)
+The leakage-safe pipeline: raw IBM dataset (24.39M rows) → chronological parquet splits → 12-feature online / 40-feature velocity sets → graph snapshots → model artifacts. Byte-parity-verified velocity replay guarantees no row observes its own future.
+
+> **All 9 diagrams + full docs:** [`architecture/README.md`](architecture/README.md)
+
+---
+
 ## 🧬 Helix Self-Healing System
 
 A complete self-healing runtime, embedded and tested — not a slide deck promise:
